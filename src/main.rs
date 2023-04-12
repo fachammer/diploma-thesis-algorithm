@@ -1,5 +1,25 @@
 use std::ops::{Add, Mul};
 
+enum Term {
+    Variable(u32),
+    Zero,
+    S(Box<Term>),
+    Add(Box<Term>, Box<Term>),
+    Mul(Box<Term>, Box<Term>),
+}
+
+impl From<Term> for Polynomial {
+    fn from(t: Term) -> Self {
+        match t {
+            Term::Variable(_) => Polynomial(vec![0, 1]),
+            Term::Zero => Polynomial(vec![]),
+            Term::S(u) => Polynomial::from(*u) + Polynomial(vec![1]),
+            Term::Add(u, v) => Polynomial::from(*u) + Polynomial::from(*v),
+            Term::Mul(u, v) => Polynomial::from(*u) * Polynomial::from(*v),
+        }
+    }
+}
+
 #[derive(Debug, Eq)]
 struct Polynomial(Vec<u32>);
 
@@ -81,6 +101,18 @@ fn equal_polynomials() {
     let p = Polynomial(vec![]);
     let q = Polynomial(vec![0, 0]);
     assert!(p == q);
+}
+
+#[test]
+fn polynomial_from_term() {
+    let t = Term::Add(Term::Variable(0).into(), Term::Variable(0).into());
+    assert_eq!(Polynomial(vec![0, 2]), t.into());
+}
+
+#[test]
+fn polynomial_from_mul_term() {
+    let t = Term::S(Term::Mul(Term::Variable(0).into(), Term::Variable(0).into()).into());
+    assert_eq!(Polynomial(vec![1, 0, 1]), t.into());
 }
 
 fn main() {
