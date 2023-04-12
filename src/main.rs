@@ -1,7 +1,31 @@
 use std::ops::{Add, Mul};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq)]
 struct Polynomial(Vec<u32>);
+
+impl Polynomial {
+    fn coefficient(&self, degree: usize) -> u32 {
+        *self.0.get(degree).unwrap_or(&0)
+    }
+}
+
+impl PartialEq for Polynomial {
+    fn eq(&self, other: &Self) -> bool {
+        for i in 0..self.0.len() {
+            if self.coefficient(i) != other.coefficient(i) {
+                return false;
+            }
+        }
+
+        for j in 0..other.0.len() {
+            if self.coefficient(j) != other.coefficient(j) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
 
 impl Add for Polynomial {
     type Output = Self;
@@ -50,6 +74,13 @@ fn mul_polynomials() {
     let p = Polynomial(vec![1, 2, 3]);
     let q = Polynomial(vec![1, 2]);
     assert_eq!(p * q, Polynomial(vec![1, 4, 3 + 4, 6]));
+}
+
+#[test]
+fn equal_polynomials() {
+    let p = Polynomial(vec![]);
+    let q = Polynomial(vec![0, 0]);
+    assert!(p == q);
 }
 
 fn main() {
