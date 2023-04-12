@@ -24,12 +24,20 @@ impl From<Term> for Polynomial {
     }
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, Clone)]
 struct Polynomial(Vec<u32>);
 
 impl Polynomial {
     fn coefficient(&self, degree: usize) -> u32 {
         *self.0.get(degree).unwrap_or(&0)
+    }
+
+    fn evaluate_at_zero(&self) -> u32 {
+        self.coefficient(0)
+    }
+
+    fn at_variable_plus_one(&self) -> Term {
+        Term::from(self.clone()).substitute(Term::S(Term::Variable.into()))
     }
 }
 
@@ -117,6 +125,20 @@ impl Term {
 
         Self::Mul(Self::Variable.into(), Self::monomial(degree - 1).into())
     }
+
+    fn substitute(&self, term: Self) -> Self {
+        match self {
+            Term::Variable => term,
+            Term::Zero => Term::Zero,
+            Term::S(t) => Term::S(t.substitute(term).into()),
+            Term::Add(t, u) => {
+                Term::Add(t.substitute(term.clone()).into(), u.substitute(term).into())
+            }
+            Term::Mul(t, u) => {
+                Term::Mul(t.substitute(term.clone()).into(), u.substitute(term).into())
+            }
+        }
+    }
 }
 
 #[test]
@@ -170,6 +192,64 @@ fn term_from_polynomial() {
         ),
         p.into()
     );
+}
+
+#[test]
+fn provability_in_AB() {
+    let t = Term::S(Term::Zero.into());
+    let u = Term::Zero;
+    assert!(is_negated_equality_provable_in_AB(t, u));
+}
+
+#[test]
+fn golden_ratio_polynomial_provability_in_AT() {
+    let t = Term::Mul(Term::Variable.into(), Term::Variable.into());
+    let u = Term::Add(Term::Variable.into(), Term::S(Term::Zero.into()).into());
+
+    assert!(is_negated_equality_provable_in_AB(t, u));
+}
+
+#[test]
+fn negated_equality_of_same_terms_is_not_provable_in_AB() {
+    assert!(!is_negated_equality_provable_in_AB(
+        Term::S(Term::Zero.into()),
+        Term::S(Term::Zero.into())
+    ));
+}
+
+fn reduce(mut left: Polynomial, mut right: Polynomial) -> (Polynomial, Polynomial) {
+    let left_clone = left.clone();
+    let right_clone = right.clone();
+    for (i, c) in left.0.iter_mut().enumerate() {
+        *c = c.saturating_sub(right_clone.coefficient(i));
+    }
+
+    for (i, c) in right.0.iter_mut().enumerate() {
+        *c = c.saturating_sub(left_clone.coefficient(i));
+    }
+
+    (left, right)
+}
+
+fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
+    let left_poly = Polynomial::from(left);
+    let right_poly = Polynomial::from(right);
+
+    let (left_poly, right_poly) = reduce(left_poly, right_poly);
+
+    if left_poly == Polynomial(vec![]) {
+        return right_poly.coefficient(0) > 0;
+    } else if right_poly == Polynomial(vec![]) {
+        return left_poly.coefficient(0) > 0;
+    }
+
+    is_negated_equality_provable_in_AB(
+        Polynomial(vec![left_poly.evaluate_at_zero()]).into(),
+        Polynomial(vec![right_poly.evaluate_at_zero()]).into(),
+    ) && is_negated_equality_provable_in_AB(
+        left_poly.at_variable_plus_one(),
+        right_poly.at_variable_plus_one(),
+    )
 }
 
 fn main() {
