@@ -1,4 +1,4 @@
-use std::ops::Add;
+use std::ops::{Add, Mul};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Polynomial(Vec<u32>);
@@ -22,9 +22,36 @@ impl Add for Polynomial {
     }
 }
 
-fn main() {
+impl Mul for Polynomial {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut coefficients = vec![0; usize::max(0, self.0.len() + rhs.0.len() - 1)];
+        for i in 0..self.0.len() {
+            for j in 0..rhs.0.len() {
+                if i + j < coefficients.len() {
+                    coefficients[i + j] += self.0[i] * rhs.0[j];
+                }
+            }
+        }
+        Self(coefficients)
+    }
+}
+
+#[test]
+fn add_polynomials() {
     let p = Polynomial(vec![1, 2, 3]);
     let q = Polynomial(vec![1, 2]);
     assert_eq!(p + q, Polynomial(vec![2, 4, 3]));
+}
+
+#[test]
+fn mul_polynomials() {
+    let p = Polynomial(vec![1, 2, 3]);
+    let q = Polynomial(vec![1, 2]);
+    assert_eq!(p * q, Polynomial(vec![1, 4, 3 + 4, 6]));
+}
+
+fn main() {
     println!("{p:?}", p = Polynomial(vec![1, 2, 3]));
 }
