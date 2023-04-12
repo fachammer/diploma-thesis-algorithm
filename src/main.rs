@@ -1,7 +1,11 @@
-use std::ops::{Add, Mul};
+use std::{
+    ops::{Add, Mul},
+    vec,
+};
 
+#[derive(PartialEq, Eq, Debug, Clone)]
 enum Term {
-    Variable(u32),
+    Variable,
     Zero,
     S(Box<Term>),
     Add(Box<Term>, Box<Term>),
@@ -11,7 +15,7 @@ enum Term {
 impl From<Term> for Polynomial {
     fn from(t: Term) -> Self {
         match t {
-            Term::Variable(_) => Polynomial(vec![0, 1]),
+            Term::Variable => Polynomial(vec![0, 1]),
             Term::Zero => Polynomial(vec![]),
             Term::S(u) => Polynomial::from(*u) + Polynomial(vec![1]),
             Term::Add(u, v) => Polynomial::from(*u) + Polynomial::from(*v),
@@ -82,6 +86,39 @@ impl Mul for Polynomial {
     }
 }
 
+impl From<Polynomial> for Term {
+    fn from(p: Polynomial) -> Self {
+        let mut sum = vec![];
+        for (i, c) in p.0.iter().enumerate().rev() {
+            for j in 0..*c {
+                sum.push(Self::monomial(
+                    i.try_into().expect("degree should be small enough"),
+                ));
+            }
+        }
+
+        Self::sum_of_terms(sum)
+    }
+}
+
+impl Term {
+    fn sum_of_terms(terms: Vec<Self>) -> Self {
+        let Some((first, rest)) = terms.split_first() else {
+            return Self::Zero;
+        };
+
+        Term::Add(first.clone().into(), Self::sum_of_terms(rest.into()).into())
+    }
+
+    fn monomial(degree: u32) -> Self {
+        if degree == 0 {
+            return Self::S(Self::Zero.into());
+        }
+
+        Self::Mul(Self::Variable.into(), Self::monomial(degree - 1).into())
+    }
+}
+
 #[test]
 fn add_polynomials() {
     let p = Polynomial(vec![1, 2, 3]);
@@ -105,14 +142,34 @@ fn equal_polynomials() {
 
 #[test]
 fn polynomial_from_term() {
-    let t = Term::Add(Term::Variable(0).into(), Term::Variable(0).into());
+    let t = Term::Add(Term::Variable.into(), Term::Variable.into());
     assert_eq!(Polynomial(vec![0, 2]), t.into());
 }
 
 #[test]
 fn polynomial_from_mul_term() {
-    let t = Term::S(Term::Mul(Term::Variable(0).into(), Term::Variable(0).into()).into());
+    let t = Term::S(Term::Mul(Term::Variable.into(), Term::Variable.into()).into());
     assert_eq!(Polynomial(vec![1, 0, 1]), t.into());
+}
+
+#[test]
+fn term_from_polynomial() {
+    let p = Polynomial(vec![1, 1, 1]);
+    assert_eq!(
+        Term::Add(
+            Term::Mul(
+                Term::Variable.into(),
+                Term::Mul(Term::Variable.into(), Term::S(Term::Zero.into()).into()).into()
+            )
+            .into(),
+            Term::Add(
+                Term::Mul(Term::Variable.into(), Term::S(Term::Zero.into()).into()).into(),
+                Term::Add(Term::S(Term::Zero.into()).into(), Term::Zero.into()).into()
+            )
+            .into()
+        ),
+        p.into()
+    );
 }
 
 fn main() {
