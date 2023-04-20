@@ -296,12 +296,8 @@ where
 
     fn subtract(&self, other: &Self) -> Self {
         let mut result = Self::new();
-        let self_support: HashSet<&T> = self.support().collect();
-        let other_support = other.support().collect();
 
-        let support = self_support.union(&other_support);
-
-        for e in support {
+        for e in self.support() {
             *result.amount_mut((*e).clone()) = self.amount(e).saturating_sub(other.amount(e));
         }
 
@@ -310,12 +306,8 @@ where
 
     fn intersect(&self, other: &Self) -> Self {
         let mut result = Self::new();
-        let self_support: HashSet<&T> = self.support().collect();
-        let other_support = other.support().collect();
 
-        let support = self_support.union(&other_support);
-
-        for e in support {
+        for e in self.support() {
             *result.amount_mut((*e).clone()) = self.amount(e).min(other.amount(e));
         }
 
