@@ -1,4 +1,6 @@
 use std::{
+    collections::{hash_map::Keys, HashMap, HashSet},
+    hash::Hash,
     ops::{Add, Mul},
     vec,
 };
@@ -250,6 +252,123 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
         left_poly.at_variable_plus_one(),
         right_poly.at_variable_plus_one(),
     )
+}
+
+struct Multiset<T> {
+    elements: HashMap<T, u32>,
+}
+
+impl<T> Multiset<T>
+where
+    T: Eq + Hash + Clone,
+{
+    fn new() -> Self {
+        Self {
+            elements: HashMap::new(),
+        }
+    }
+
+    fn support(&self) -> impl Iterator<Item = &T> {
+        self.elements.keys()
+    }
+
+    fn amount(&self, element: &T) -> u32 {
+        *self.elements.get(element).unwrap_or(&0)
+    }
+
+    fn amount_mut(&mut self, element: T) -> &mut u32 {
+        self.elements.entry(element).or_insert(0)
+    }
+
+    fn union(&self, other: &Self) -> Self {
+        let mut result = Self::new();
+        let self_support: HashSet<&T> = self.support().collect();
+        let other_support = other.support().collect();
+
+        let support = self_support.union(&other_support);
+
+        for e in support {
+            *result.amount_mut((*e).clone()) = self.amount(e) + other.amount(e);
+        }
+
+        result
+    }
+
+    fn subtract(&self, other: &Self) -> Self {
+        let mut result = Self::new();
+        let self_support: HashSet<&T> = self.support().collect();
+        let other_support = other.support().collect();
+
+        let support = self_support.union(&other_support);
+
+        for e in support {
+            *result.amount_mut((*e).clone()) = self.amount(e).saturating_sub(other.amount(e));
+        }
+
+        result
+    }
+
+    fn intersect(&self, other: &Self) -> Self {
+        let mut result = Self::new();
+        let self_support: HashSet<&T> = self.support().collect();
+        let other_support = other.support().collect();
+
+        let support = self_support.union(&other_support);
+
+        for e in support {
+            *result.amount_mut((*e).clone()) = self.amount(e).min(other.amount(e));
+        }
+
+        result
+    }
+}
+
+#[test]
+fn multiset_union() {
+    let mut left = Multiset::<u32>::new();
+    *left.amount_mut(0) = 2;
+    *left.amount_mut(1) = 1;
+    let mut right = Multiset::<u32>::new();
+    *right.amount_mut(1) = 1;
+    *right.amount_mut(2) = 2;
+
+    let union = left.union(&right);
+
+    assert_eq!(union.amount(&0), 2);
+    assert_eq!(union.amount(&1), 2);
+    assert_eq!(union.amount(&2), 2);
+}
+
+#[test]
+fn multiset_subtract() {
+    let mut left = Multiset::<u32>::new();
+    *left.amount_mut(0) = 2;
+    *left.amount_mut(1) = 1;
+    let mut right = Multiset::<u32>::new();
+    *right.amount_mut(1) = 1;
+    *right.amount_mut(2) = 2;
+
+    let difference = left.subtract(&right);
+
+    assert_eq!(difference.amount(&0), 2);
+    assert_eq!(difference.amount(&1), 0);
+    assert_eq!(difference.amount(&2), 0);
+}
+
+#[test]
+fn multiset_intersect() {
+    let mut left = Multiset::<u32>::new();
+    *left.amount_mut(0) = 2;
+    *left.amount_mut(1) = 1;
+    let mut right = Multiset::<u32>::new();
+    *right.amount_mut(1) = 1;
+    *right.amount_mut(2) = 2;
+
+    let difference = left.intersect(&right);
+
+    assert_eq!(difference.amount(&0), 0);
+    assert_eq!(difference.amount(&1), 1);
+    assert_eq!(difference.amount(&2), 0);
 }
 
 fn main() {
