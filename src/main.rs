@@ -254,6 +254,7 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
     )
 }
 
+#[derive(Debug)]
 struct Multiset<T> {
     elements: HashMap<T, u32>,
 }
@@ -270,6 +271,23 @@ where
         multiset
     }
 }
+
+impl<T> PartialEq for Multiset<T>
+where
+    T: Eq + Hash,
+{
+    fn eq(&self, other: &Self) -> bool {
+        for e in self.support().chain(other.support()) {
+            if self.amount(e) != other.amount(e) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl<T> Eq for Multiset<T> where T: Eq + Hash {}
 
 impl<T> Multiset<T> {
     fn new() -> Self {
@@ -341,9 +359,7 @@ fn multiset_union() {
     let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
     let union = left.union(&right);
 
-    assert_eq!(union.amount(&0), 2);
-    assert_eq!(union.amount(&1), 2);
-    assert_eq!(union.amount(&2), 2);
+    assert_eq!(union, Multiset::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
 }
 
 #[test]
@@ -376,6 +392,14 @@ fn multiset_from_iter() {
     assert_eq!(multiset.amount(&1), 2);
     assert_eq!(multiset.amount(&2), 0);
     assert_eq!(multiset.amount(&3), 0);
+}
+
+#[test]
+fn multiset_eq() {
+    let left = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 0)]);
+    let right = Multiset::from_iter(vec![(0, 1), (1, 2)]);
+
+    assert_eq!(left, right);
 }
 
 fn main() {
