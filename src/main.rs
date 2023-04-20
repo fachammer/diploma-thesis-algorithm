@@ -258,10 +258,20 @@ struct Multiset<T> {
     elements: HashMap<T, u32>,
 }
 
-impl<T> Multiset<T>
+impl<T> FromIterator<(T, u32)> for Multiset<T>
 where
-    T: Eq + Hash + Clone,
+    T: Eq + Hash,
 {
+    fn from_iter<U: IntoIterator<Item = (T, u32)>>(iter: U) -> Self {
+        let mut multiset = Self::new();
+        for e in iter {
+            *multiset.amount_mut(e.0) = e.1;
+        }
+        multiset
+    }
+}
+
+impl<T> Multiset<T> {
     fn new() -> Self {
         Self {
             elements: HashMap::new(),
@@ -271,7 +281,12 @@ where
     fn support(&self) -> impl Iterator<Item = &T> {
         self.elements.keys()
     }
+}
 
+impl<T> Multiset<T>
+where
+    T: Eq + Hash,
+{
     fn amount(&self, element: &T) -> u32 {
         *self.elements.get(element).unwrap_or(&0)
     }
@@ -279,7 +294,12 @@ where
     fn amount_mut(&mut self, element: T) -> &mut u32 {
         self.elements.entry(element).or_insert(0)
     }
+}
 
+impl<T> Multiset<T>
+where
+    T: Eq + Hash + Clone,
+{
     fn union(&self, other: &Self) -> Self {
         let mut result = Self::new();
         let self_support: HashSet<&T> = self.support().collect();
@@ -317,13 +337,8 @@ where
 
 #[test]
 fn multiset_union() {
-    let mut left = Multiset::<u32>::new();
-    *left.amount_mut(0) = 2;
-    *left.amount_mut(1) = 1;
-    let mut right = Multiset::<u32>::new();
-    *right.amount_mut(1) = 1;
-    *right.amount_mut(2) = 2;
-
+    let left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
+    let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
     let union = left.union(&right);
 
     assert_eq!(union.amount(&0), 2);
@@ -333,13 +348,8 @@ fn multiset_union() {
 
 #[test]
 fn multiset_subtract() {
-    let mut left = Multiset::<u32>::new();
-    *left.amount_mut(0) = 2;
-    *left.amount_mut(1) = 1;
-    let mut right = Multiset::<u32>::new();
-    *right.amount_mut(1) = 1;
-    *right.amount_mut(2) = 2;
-
+    let left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
+    let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
     let difference = left.subtract(&right);
 
     assert_eq!(difference.amount(&0), 2);
@@ -349,18 +359,23 @@ fn multiset_subtract() {
 
 #[test]
 fn multiset_intersect() {
-    let mut left = Multiset::<u32>::new();
-    *left.amount_mut(0) = 2;
-    *left.amount_mut(1) = 1;
-    let mut right = Multiset::<u32>::new();
-    *right.amount_mut(1) = 1;
-    *right.amount_mut(2) = 2;
-
+    let left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
+    let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
     let difference = left.intersect(&right);
 
     assert_eq!(difference.amount(&0), 0);
     assert_eq!(difference.amount(&1), 1);
     assert_eq!(difference.amount(&2), 0);
+}
+
+#[test]
+fn multiset_from_iter() {
+    let multiset = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 0), (0, 2)]);
+
+    assert_eq!(multiset.amount(&0), 2);
+    assert_eq!(multiset.amount(&1), 2);
+    assert_eq!(multiset.amount(&2), 0);
+    assert_eq!(multiset.amount(&3), 0);
 }
 
 fn main() {
