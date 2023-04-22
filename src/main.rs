@@ -116,6 +116,22 @@ impl Polynomial {
     fn at_variable_plus_one(&self) -> Term {
         Term::from(self.clone()).substitute(Term::S(Term::Variable(0).into()))
     }
+
+    fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
+        let (left, right) = reduce(self, other);
+
+        for m_1 in left.0.support() {
+            if right.0.support().all(|m_2| !m_1.strictly_divides(m_2)) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn is_strictly_monomially_comparable_to(&self, other: &Polynomial) -> bool {
+        self.is_monomially_smaller_than(other) || other.is_monomially_smaller_than(self)
+    }
 }
 
 impl Add for Polynomial {
@@ -334,6 +350,19 @@ fn term_from_polynomial() {
 }
 
 #[test]
+fn x_is_monomially_smaller_than_x_squared_plus_one() {
+    let x = Polynomial::from_variable(0);
+    assert!(x.is_monomially_smaller_than(&(&x * &x + 1)))
+}
+
+#[test]
+fn x_and_y_are_incomparable() {
+    let x = Polynomial::from_variable(0);
+    let y = Polynomial::from_variable(1);
+    assert!(!x.is_strictly_monomially_comparable_to(&y))
+}
+
+#[test]
 fn provability_in_AB() {
     let t = Term::S(Term::Zero.into());
     let u = Term::Zero;
@@ -372,7 +401,7 @@ fn even_odd_disequality_is_not_provable_in_AB() {
     ))
 }
 
-fn reduce(left: Polynomial, right: Polynomial) -> (Polynomial, Polynomial) {
+fn reduce(left: &Polynomial, right: &Polynomial) -> (Polynomial, Polynomial) {
     let left_reduced_monomials = left.0.subtract(&right.0);
     let right_reduced_monomials = right.0.subtract(&left.0);
 
@@ -386,7 +415,7 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
     let left_poly = Polynomial::from(left);
     let right_poly = Polynomial::from(right);
 
-    let (left_poly, right_poly) = reduce(left_poly, right_poly);
+    let (left_poly, right_poly) = reduce(&left_poly, &right_poly);
 
     if left_poly == Polynomial(Multiset::new()) {
         return right_poly.coefficient(&Monomial::one()) > 0;
