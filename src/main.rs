@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Keys, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     hash::Hash,
     ops::{Add, Mul},
     vec,
@@ -7,7 +7,7 @@ use std::{
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 enum Term {
-    Variable,
+    Variable(u32),
     Zero,
     S(Box<Term>),
     Add(Box<Term>, Box<Term>),
@@ -17,7 +17,7 @@ enum Term {
 impl From<Term> for Polynomial {
     fn from(t: Term) -> Self {
         match t {
-            Term::Variable => Polynomial(vec![0, 1]),
+            Term::Variable(v) => Polynomial(vec![0, 1]),
             Term::Zero => Polynomial(vec![]),
             Term::S(u) => Polynomial::from(*u) + Polynomial(vec![1]),
             Term::Add(u, v) => Polynomial::from(*u) + Polynomial::from(*v),
@@ -39,7 +39,7 @@ impl Polynomial {
     }
 
     fn at_variable_plus_one(&self) -> Term {
-        Term::from(self.clone()).substitute(Term::S(Term::Variable.into()))
+        Term::from(self.clone()).substitute(Term::S(Term::Variable(0).into()))
     }
 }
 
@@ -125,12 +125,12 @@ impl Term {
             return Self::S(Self::Zero.into());
         }
 
-        Self::Mul(Self::Variable.into(), Self::monomial(degree - 1).into())
+        Self::Mul(Self::Variable(0).into(), Self::monomial(degree - 1).into())
     }
 
     fn substitute(&self, term: Self) -> Self {
         match self {
-            Term::Variable => term,
+            Term::Variable(v) => term,
             Term::Zero => Term::Zero,
             Term::S(t) => Term::S(t.substitute(term).into()),
             Term::Add(t, u) => {
@@ -166,13 +166,13 @@ fn equal_polynomials() {
 
 #[test]
 fn polynomial_from_term() {
-    let t = Term::Add(Term::Variable.into(), Term::Variable.into());
+    let t = Term::Add(Term::Variable(0).into(), Term::Variable(0).into());
     assert_eq!(Polynomial(vec![0, 2]), t.into());
 }
 
 #[test]
 fn polynomial_from_mul_term() {
-    let t = Term::S(Term::Mul(Term::Variable.into(), Term::Variable.into()).into());
+    let t = Term::S(Term::Mul(Term::Variable(0).into(), Term::Variable(0).into()).into());
     assert_eq!(Polynomial(vec![1, 0, 1]), t.into());
 }
 
@@ -182,12 +182,12 @@ fn term_from_polynomial() {
     assert_eq!(
         Term::Add(
             Term::Mul(
-                Term::Variable.into(),
-                Term::Mul(Term::Variable.into(), Term::S(Term::Zero.into()).into()).into()
+                Term::Variable(0).into(),
+                Term::Mul(Term::Variable(0).into(), Term::S(Term::Zero.into()).into()).into()
             )
             .into(),
             Term::Add(
-                Term::Mul(Term::Variable.into(), Term::S(Term::Zero.into()).into()).into(),
+                Term::Mul(Term::Variable(0).into(), Term::S(Term::Zero.into()).into()).into(),
                 Term::Add(Term::S(Term::Zero.into()).into(), Term::Zero.into()).into()
             )
             .into()
@@ -205,8 +205,8 @@ fn provability_in_AB() {
 
 #[test]
 fn golden_ratio_polynomial_provability_in_AT() {
-    let t = Term::Mul(Term::Variable.into(), Term::Variable.into());
-    let u = Term::Add(Term::Variable.into(), Term::S(Term::Zero.into()).into());
+    let t = Term::Mul(Term::Variable(0).into(), Term::Variable(0).into());
+    let u = Term::Add(Term::Variable(0).into(), Term::S(Term::Zero.into()).into());
 
     assert!(is_negated_equality_provable_in_AB(t, u));
 }
