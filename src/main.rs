@@ -44,6 +44,24 @@ impl Monomial {
     fn variables(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
         self.0.amount_iter().map(|(&v, &n)| (v, n))
     }
+
+    fn strictly_divides(&self, other: &Monomial) -> bool {
+        self.0.is_multisubset_of(&other.0) && self != other
+    }
+}
+
+#[test]
+fn strict_divisibility_satisfied() {
+    assert!(Monomial::from_variable(0, 1)
+        .strictly_divides(&(Monomial::from_variable(0, 1) * Monomial::from_variable(1, 1))))
+}
+
+#[test]
+fn strict_divisibility_not_satisfied() {
+    assert!(
+        !(Monomial::from_variable(0, 1) * Monomial::from_variable(0, 1))
+            .strictly_divides(&(Monomial::from_variable(0, 1) * Monomial::from_variable(1, 1)))
+    )
 }
 
 impl Mul for Monomial {
@@ -323,7 +341,7 @@ fn provability_in_AB() {
 }
 
 #[test]
-fn golden_ratio_polynomial_provability_in_AT() {
+fn golden_ratio_polynomial_provability_in_AB() {
     let x = Polynomial::from_variable(0);
     let left = &x * &x;
     let right = x + 1;
@@ -340,6 +358,18 @@ fn negated_equality_of_same_terms_is_not_provable_in_AB() {
         Term::S(Term::Zero.into()),
         Term::S(Term::Zero.into())
     ));
+}
+
+#[test]
+fn even_odd_disequality_is_not_provable_in_AB() {
+    let x = Polynomial::from_variable(0);
+    let y = Polynomial::from_variable(1);
+    let left = 2 * x;
+    let right = 2 * y + 1;
+    assert!(!is_negated_equality_provable_in_AB(
+        left.into(),
+        right.into()
+    ))
 }
 
 fn reduce(left: Polynomial, right: Polynomial) -> (Polynomial, Polynomial) {
@@ -397,13 +427,7 @@ where
     T: Eq + Hash,
 {
     fn eq(&self, other: &Self) -> bool {
-        for e in self.support().chain(other.support()) {
-            if self.amount(e) != other.amount(e) {
-                return false;
-            }
-        }
-
-        true
+        self.is_multisubset_of(other) && other.is_multisubset_of(self)
     }
 }
 
@@ -449,6 +473,16 @@ where
 
     fn amount_iter(&self) -> impl Iterator<Item = (&T, &u32)> {
         self.elements.iter()
+    }
+
+    fn is_multisubset_of(&self, other: &Multiset<T>) -> bool {
+        for e in self.support() {
+            if self.amount(e) > other.amount(e) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
