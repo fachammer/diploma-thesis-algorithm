@@ -417,6 +417,10 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
 
     let (left_poly, right_poly) = reduce(&left_poly, &right_poly);
 
+    if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
+        return false;
+    }
+
     if left_poly == Polynomial(Multiset::new()) {
         return right_poly.coefficient(&Monomial::one()) > 0;
     } else if right_poly == Polynomial(Multiset::new()) {
