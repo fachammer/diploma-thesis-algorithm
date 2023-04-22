@@ -1,8 +1,6 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     hash::Hash,
-    iter::{Product, Sum},
-    num,
     ops::{Add, Mul},
     vec,
 };
@@ -53,14 +51,6 @@ impl Mul for Monomial {
 
     fn mul(self, rhs: Self) -> Self::Output {
         Self(self.0.union(&rhs.0))
-    }
-}
-
-impl Mul<Monomial> for u32 {
-    type Output = Polynomial;
-
-    fn mul(self, rhs: Monomial) -> Self::Output {
-        Polynomial(Multiset::from_iter(vec![(rhs, self)]))
     }
 }
 
@@ -134,6 +124,14 @@ impl Add for &Polynomial {
     }
 }
 
+impl Add<&Polynomial> for Polynomial {
+    type Output = Polynomial;
+
+    fn add(self, rhs: &Polynomial) -> Self::Output {
+        &self + rhs
+    }
+}
+
 impl Mul for Polynomial {
     type Output = Self;
 
@@ -155,6 +153,30 @@ impl Mul for &Polynomial {
             }
         }
         Polynomial(output)
+    }
+}
+
+impl Mul<&Polynomial> for Polynomial {
+    type Output = Polynomial;
+
+    fn mul(self, rhs: &Polynomial) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl Mul<&Polynomial> for u32 {
+    type Output = Polynomial;
+
+    fn mul(self, rhs: &Polynomial) -> Self::Output {
+        &Polynomial::from(self) * rhs
+    }
+}
+
+impl Mul<Polynomial> for u32 {
+    type Output = Polynomial;
+
+    fn mul(self, rhs: Polynomial) -> Self::Output {
+        Polynomial::from(self) * rhs
     }
 }
 
@@ -244,78 +266,38 @@ fn eq_polynomials() {
 
 #[test]
 fn add_polynomials() {
-    let p = Polynomial(Multiset::from_iter(vec![
-        (Monomial::from_variable(0, 0), 1),
-        (Monomial::from_variable(0, 1), 2),
-        (Monomial::from_variable(0, 2), 3),
-    ]));
-    let q = Polynomial(Multiset::from_iter(vec![
-        (Monomial::from_variable(0, 0), 1),
-        (Monomial::from_variable(0, 1), 2),
-    ]));
-    assert_eq!(
-        p + q,
-        Polynomial(Multiset::from_iter(vec![
-            (Monomial::from_variable(0, 0), 2),
-            (Monomial::from_variable(0, 1), 4),
-            (Monomial::from_variable(0, 2), 3)
-        ]))
-    )
+    let x = Polynomial::from_variable(0);
+    let p = 3 * &x * &x + 2 * &x + 1;
+    let q = 2 * &x + 1;
+    assert_eq!(p + q, 3 * &x * &x + 4 * &x + 2)
 }
 
 #[test]
 fn mul_polynomials() {
-    let p = Polynomial(Multiset::from_iter(vec![
-        (Monomial::from_variable(0, 0), 1),
-        (Monomial::from_variable(0, 1), 2),
-        (Monomial::from_variable(0, 2), 3),
-    ]));
-    let q = Polynomial(Multiset::from_iter(vec![
-        (Monomial::from_variable(0, 0), 1),
-        (Monomial::from_variable(0, 1), 2),
-    ]));
-    assert_eq!(
-        p * q,
-        Polynomial(Multiset::from_iter(vec![
-            (Monomial::from_variable(0, 0), 1),
-            (Monomial::from_variable(0, 1), 4),
-            (Monomial::from_variable(0, 2), 3 + 4),
-            (Monomial::from_variable(0, 3), 6)
-        ]))
-    )
+    let x = Polynomial::from_variable(0);
+    let p = 3 * &x * &x + 2 * &x + 1;
+    let q = 2 * &x + 1;
+    assert_eq!(p * q, 6 * &x * &x * &x + 7 * &x * &x + 4 * &x + 1)
 }
 
 #[test]
 fn polynomial_from_term() {
     let t = Term::Add(Term::Variable(0).into(), Term::Variable(0).into());
-    assert_eq!(
-        Polynomial(Multiset::from_iter(vec![
-            (Monomial::from_variable(0, 0), 0),
-            (Monomial::from_variable(0, 1), 2)
-        ])),
-        t.into()
-    );
+    let x = Polynomial::from_variable(0);
+    assert_eq!(2 * x, t.into());
 }
 
 #[test]
 fn polynomial_from_mul_term() {
     let t = Term::S(Term::Mul(Term::Variable(0).into(), Term::Variable(0).into()).into());
-    assert_eq!(
-        Polynomial(Multiset::from_iter(vec![
-            (Monomial::from_variable(0, 0), 1),
-            (Monomial::from_variable(0, 2), 1)
-        ])),
-        t.into()
-    );
+    let x = Polynomial::from_variable(0);
+    assert_eq!(&x * &x + 1, t.into());
 }
 
 #[test]
 fn term_from_polynomial() {
-    let p = Polynomial(Multiset::from_iter(vec![
-        (Monomial::from_variable(0, 0), 1),
-        (Monomial::from_variable(0, 1), 1),
-        (Monomial::from_variable(0, 2), 1),
-    ]));
+    let x = Polynomial::from_variable(0);
+    let p = &x * &x + x + 1;
     assert_eq!(
         Term::Add(
             Term::Mul(
@@ -342,10 +324,14 @@ fn provability_in_AB() {
 
 #[test]
 fn golden_ratio_polynomial_provability_in_AT() {
-    let t = Term::Mul(Term::Variable(0).into(), Term::Variable(0).into());
-    let u = Term::Add(Term::Variable(0).into(), Term::S(Term::Zero.into()).into());
+    let x = Polynomial::from_variable(0);
+    let left = &x * &x;
+    let right = x + 1;
 
-    assert!(is_negated_equality_provable_in_AB(t, u));
+    assert!(is_negated_equality_provable_in_AB(
+        left.into(),
+        right.into()
+    ));
 }
 
 #[test]
@@ -356,7 +342,7 @@ fn negated_equality_of_same_terms_is_not_provable_in_AB() {
     ));
 }
 
-fn reduce(mut left: Polynomial, mut right: Polynomial) -> (Polynomial, Polynomial) {
+fn reduce(left: Polynomial, right: Polynomial) -> (Polynomial, Polynomial) {
     let left_reduced_monomials = left.0.subtract(&right.0);
     let right_reduced_monomials = right.0.subtract(&left.0);
 
