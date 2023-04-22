@@ -421,9 +421,9 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
         return false;
     }
 
-    if left_poly == Polynomial(Multiset::new()) {
+    if left_poly == 0.into() {
         return right_poly.coefficient(&Monomial::one()) > 0;
-    } else if right_poly == Polynomial(Multiset::new()) {
+    } else if right_poly == 0.into() {
         return left_poly.coefficient(&Monomial::one()) > 0;
     }
 
