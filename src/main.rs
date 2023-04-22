@@ -56,6 +56,14 @@ impl Mul for Monomial {
     }
 }
 
+impl Mul<Monomial> for u32 {
+    type Output = Polynomial;
+
+    fn mul(self, rhs: Monomial) -> Self::Output {
+        Polynomial(Multiset::from_iter(vec![(rhs, self)]))
+    }
+}
+
 impl PartialOrd for Monomial {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -67,8 +75,8 @@ impl Ord for Monomial {
         let mut self_variables: Vec<(u32, u32)> = self.variables().collect();
         let mut other_variables: Vec<(u32, u32)> = other.variables().collect();
 
-        self_variables.sort_by_key(|(v, _n)| *v);
-        other_variables.sort_by_key(|(v, _n)| *v);
+        self_variables.sort_by_key(|(v, _)| *v);
+        other_variables.sort_by_key(|(v, _)| *v);
 
         let self_sorted_amounts: Vec<u32> = self_variables.into_iter().map(|(_, n)| n).collect();
         let other_sorted_amounts: Vec<u32> = other_variables.into_iter().map(|(_, n)| n).collect();
@@ -106,12 +114,36 @@ impl Add for Polynomial {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0.union(&rhs.0))
+        &self + &rhs
+    }
+}
+
+impl Add<u32> for Polynomial {
+    type Output = Polynomial;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        self + Polynomial::from(rhs)
+    }
+}
+
+impl Add for &Polynomial {
+    type Output = Polynomial;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Polynomial(self.0.union(&rhs.0))
     }
 }
 
 impl Mul for Polynomial {
     type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        &self * &rhs
+    }
+}
+
+impl Mul for &Polynomial {
+    type Output = Polynomial;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let mut output: Multiset<Monomial> = Multiset::new();
@@ -122,7 +154,13 @@ impl Mul for Polynomial {
                     self.0.amount(self_monomial) * rhs.0.amount(other_monomial);
             }
         }
-        Self(output)
+        Polynomial(output)
+    }
+}
+
+impl From<u32> for Polynomial {
+    fn from(n: u32) -> Self {
+        Polynomial(Multiset::from_iter(vec![(Monomial::one(), n)]))
     }
 }
 
