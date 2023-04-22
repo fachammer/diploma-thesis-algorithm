@@ -26,6 +26,21 @@ impl From<Term> for Polynomial {
     }
 }
 
+impl Term {
+    fn free_variables(&self) -> HashSet<u32> {
+        match self {
+            Term::Variable(v) => HashSet::from_iter(vec![*v]),
+            Term::Zero => HashSet::new(),
+            Term::S(t) => t.free_variables(),
+            Term::Add(t, u) | Term::Mul(t, u) => t
+                .free_variables()
+                .union(&u.free_variables())
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Polynomial(Multiset<Monomial>);
 
@@ -109,12 +124,8 @@ impl Polynomial {
         self.0.amount(monomial)
     }
 
-    fn at_variable_zero(&self) -> Term {
-        Term::from(self.clone()).substitute(Term::Zero)
-    }
-
-    fn at_variable_plus_one(&self) -> Term {
-        Term::from(self.clone()).substitute(Term::S(Term::Variable(0).into()))
+    fn at_substitution(&self, substitution: &HashMap<u32, Term>) -> Term {
+        Term::from(self.clone()).substitute(substitution)
     }
 
     fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
@@ -276,17 +287,19 @@ impl Term {
         Self::Mul(Self::Variable(0).into(), Self::monomial(degree - 1).into())
     }
 
-    fn substitute(&self, term: Self) -> Self {
+    fn substitute(&self, substitution: &HashMap<u32, Term>) -> Self {
         match self {
-            Term::Variable(v) => term,
+            Term::Variable(v) => substitution.get(v).cloned().unwrap_or(Term::Variable(*v)),
             Term::Zero => Term::Zero,
-            Term::S(t) => Term::S(t.substitute(term).into()),
-            Term::Add(t, u) => {
-                Term::Add(t.substitute(term.clone()).into(), u.substitute(term).into())
-            }
-            Term::Mul(t, u) => {
-                Term::Mul(t.substitute(term.clone()).into(), u.substitute(term).into())
-            }
+            Term::S(t) => Term::S(t.substitute(substitution).into()),
+            Term::Add(t, u) => Term::Add(
+                t.substitute(substitution).into(),
+                u.substitute(substitution).into(),
+            ),
+            Term::Mul(t, u) => Term::Mul(
+                t.substitute(substitution).into(),
+                u.substitute(substitution).into(),
+            ),
         }
     }
 }
@@ -401,6 +414,18 @@ fn even_odd_disequality_is_not_provable_in_AB() {
     ))
 }
 
+#[test]
+fn two_xy_plus_one_not_equal_to_two_x_plus_two_y_in_AB() {
+    let x = Polynomial::from_variable(0);
+    let y = Polynomial::from_variable(1);
+    let left = 2 * &x * &y + 1;
+    let right = 2 * &x + 2 * &y;
+    assert!(is_negated_equality_provable_in_AB(
+        left.into(),
+        right.into()
+    ))
+}
+
 fn reduce(left: &Polynomial, right: &Polynomial) -> (Polynomial, Polynomial) {
     let left_reduced_monomials = left.0.subtract(&right.0);
     let right_reduced_monomials = right.0.subtract(&left.0);
@@ -411,7 +436,28 @@ fn reduce(left: &Polynomial, right: &Polynomial) -> (Polynomial, Polynomial) {
     )
 }
 
+fn substitutions(mut variables: impl Iterator<Item = u32>) -> Vec<HashMap<u32, Term>> {
+    let Some(variable) = variables.next() else {return vec![];};
+
+    let subs = substitutions(variables);
+    let mut output = Vec::new();
+
+    for sub in subs {
+        let mut zero_sub = sub.clone();
+        zero_sub.insert(variable, Term::Zero);
+        output.push(zero_sub);
+        let mut s_sub = sub;
+        s_sub.insert(variable, Term::S(Term::Variable(variable).into()));
+        output.push(s_sub);
+    }
+
+    output
+}
+
 fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
+    let right_free_variables = right.free_variables();
+    let left_free_variables = left.free_variables();
+    let free_variables = left_free_variables.union(&right_free_variables);
     let left_poly = Polynomial::from(left);
     let right_poly = Polynomial::from(right);
 
@@ -427,11 +473,17 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
         return left_poly.coefficient(&Monomial::one()) > 0;
     }
 
-    is_negated_equality_provable_in_AB(left_poly.at_variable_zero(), right_poly.at_variable_zero())
-        && is_negated_equality_provable_in_AB(
-            left_poly.at_variable_plus_one(),
-            right_poly.at_variable_plus_one(),
-        )
+    let substitutions = substitutions(free_variables.cloned());
+
+    for substitution in substitutions {
+        if !is_negated_equality_provable_in_AB(
+            left_poly.at_substitution(&substitution),
+            right_poly.at_substitution(&substitution),
+        ) {
+            return false;
+        }
+    }
+    true
 }
 
 #[derive(Debug, Clone)]
