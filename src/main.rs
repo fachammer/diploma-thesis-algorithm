@@ -1,6 +1,8 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
+    iter::{Product, Sum},
+    num,
     ops::{Add, Mul},
     vec,
 };
@@ -17,25 +19,82 @@ enum Term {
 impl From<Term> for Polynomial {
     fn from(t: Term) -> Self {
         match t {
-            Term::Variable(v) => Polynomial(vec![0, 1]),
-            Term::Zero => Polynomial(vec![]),
-            Term::S(u) => Polynomial::from(*u) + Polynomial(vec![1]),
+            Term::Variable(v) => Polynomial::from_variable(v),
+            Term::Zero => Polynomial(Multiset::new()),
+            Term::S(u) => Polynomial::from(*u) + Polynomial::one(),
             Term::Add(u, v) => Polynomial::from(*u) + Polynomial::from(*v),
             Term::Mul(u, v) => Polynomial::from(*u) * Polynomial::from(*v),
         }
     }
 }
 
-#[derive(Debug, Eq, Clone)]
-struct Polynomial(Vec<u32>);
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Polynomial(Multiset<Monomial>);
 
-impl Polynomial {
-    fn coefficient(&self, degree: usize) -> u32 {
-        *self.0.get(degree).unwrap_or(&0)
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+struct Monomial(Multiset<u32>);
+
+impl Monomial {
+    fn one() -> Self {
+        Self(Multiset::new())
     }
 
-    fn evaluate_at_zero(&self) -> u32 {
-        self.coefficient(0)
+    fn from_variable(v: u32, exponent: u32) -> Self {
+        Self(Multiset::from_iter(vec![(v, exponent)]))
+    }
+
+    fn variables(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.0.amount_iter().map(|(&v, &n)| (v, n))
+    }
+}
+
+impl Mul for Monomial {
+    type Output = Monomial;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0.union(&rhs.0))
+    }
+}
+
+impl PartialOrd for Monomial {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Monomial {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let mut self_variables: Vec<(u32, u32)> = self.variables().collect();
+        let mut other_variables: Vec<(u32, u32)> = other.variables().collect();
+
+        self_variables.sort_by_key(|(v, _n)| *v);
+        other_variables.sort_by_key(|(v, _n)| *v);
+
+        let self_sorted_amounts: Vec<u32> = self_variables.into_iter().map(|(_, n)| n).collect();
+        let other_sorted_amounts: Vec<u32> = other_variables.into_iter().map(|(_, n)| n).collect();
+
+        self_sorted_amounts.cmp(&other_sorted_amounts)
+    }
+}
+
+impl Polynomial {
+    fn one() -> Self {
+        Self(Multiset::from_iter(vec![(Monomial::one(), 1)]))
+    }
+
+    fn from_variable(v: u32) -> Self {
+        Self(Multiset::from_iter(vec![(
+            Monomial::from_variable(v, 1),
+            1,
+        )]))
+    }
+
+    fn coefficient(&self, monomial: &Monomial) -> u32 {
+        self.0.amount(monomial)
+    }
+
+    fn at_variable_zero(&self) -> Term {
+        Term::from(self.clone()).substitute(Term::Zero)
     }
 
     fn at_variable_plus_one(&self) -> Term {
@@ -43,40 +102,11 @@ impl Polynomial {
     }
 }
 
-impl PartialEq for Polynomial {
-    fn eq(&self, other: &Self) -> bool {
-        for i in 0..self.0.len() {
-            if self.coefficient(i) != other.coefficient(i) {
-                return false;
-            }
-        }
-
-        for j in 0..other.0.len() {
-            if self.coefficient(j) != other.coefficient(j) {
-                return false;
-            }
-        }
-
-        true
-    }
-}
-
 impl Add for Polynomial {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        if self.0.len() > rhs.0.len() {
-            rhs + self
-        } else {
-            Self(
-                self.0
-                    .into_iter()
-                    .chain(std::iter::repeat(0))
-                    .zip(rhs.0.into_iter())
-                    .map(|(x, y)| x + y)
-                    .collect(),
-            )
-        }
+        Self(self.0.union(&rhs.0))
     }
 }
 
@@ -84,30 +114,43 @@ impl Mul for Polynomial {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut coefficients = vec![0; usize::max(0, self.0.len() + rhs.0.len() - 1)];
-        for i in 0..self.0.len() {
-            for j in 0..rhs.0.len() {
-                if i + j < coefficients.len() {
-                    coefficients[i + j] += self.0[i] * rhs.0[j];
-                }
+        let mut output: Multiset<Monomial> = Multiset::new();
+        for self_monomial in self.0.support() {
+            for other_monomial in rhs.0.support() {
+                let product_monomial = self_monomial.clone() * other_monomial.clone();
+                *output.amount_mut(product_monomial) +=
+                    self.0.amount(self_monomial) * rhs.0.amount(other_monomial);
             }
         }
-        Self(coefficients)
+        Self(output)
+    }
+}
+
+impl From<Monomial> for Term {
+    fn from(monomial: Monomial) -> Self {
+        let mut factors = vec![];
+        for (v, n) in monomial.variables() {
+            for i in 0..n {
+                factors.push(Term::Variable(v));
+            }
+        }
+
+        Self::product_of_terms(factors)
     }
 }
 
 impl From<Polynomial> for Term {
     fn from(p: Polynomial) -> Self {
-        let mut sum = vec![];
-        for (i, c) in p.0.iter().enumerate().rev() {
-            for j in 0..*c {
-                sum.push(Self::monomial(
-                    i.try_into().expect("degree should be small enough"),
-                ));
+        let mut summands = vec![];
+        let mut monomials: Vec<&Monomial> = p.0.support().collect();
+        monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
+        for monomial in monomials {
+            for _ in 0..p.0.amount(monomial) {
+                summands.push(monomial.clone().into())
             }
         }
 
-        Self::sum_of_terms(sum)
+        Self::sum_of_terms(summands)
     }
 }
 
@@ -117,7 +160,18 @@ impl Term {
             return Self::Zero;
         };
 
-        Term::Add(first.clone().into(), Self::sum_of_terms(rest.into()).into())
+        Self::Add(first.clone().into(), Self::sum_of_terms(rest.into()).into())
+    }
+
+    fn product_of_terms(terms: Vec<Self>) -> Self {
+        let Some((first, rest)) = terms.split_first() else {
+            return Self::S(Self::Zero.into());
+        };
+
+        Self::Mul(
+            first.clone().into(),
+            Self::product_of_terms(rest.into()).into(),
+        )
     }
 
     fn monomial(degree: u32) -> Self {
@@ -144,41 +198,86 @@ impl Term {
 }
 
 #[test]
+fn eq_polynomials() {
+    let p = Polynomial(Multiset::from_iter(vec![(Monomial::one(), 0)]));
+    let q = Polynomial(Multiset::new());
+    assert_eq!(p, q)
+}
+
+#[test]
 fn add_polynomials() {
-    let p = Polynomial(vec![1, 2, 3]);
-    let q = Polynomial(vec![1, 2]);
-    assert_eq!(p + q, Polynomial(vec![2, 4, 3]));
+    let p = Polynomial(Multiset::from_iter(vec![
+        (Monomial::from_variable(0, 0), 1),
+        (Monomial::from_variable(0, 1), 2),
+        (Monomial::from_variable(0, 2), 3),
+    ]));
+    let q = Polynomial(Multiset::from_iter(vec![
+        (Monomial::from_variable(0, 0), 1),
+        (Monomial::from_variable(0, 1), 2),
+    ]));
+    assert_eq!(
+        p + q,
+        Polynomial(Multiset::from_iter(vec![
+            (Monomial::from_variable(0, 0), 2),
+            (Monomial::from_variable(0, 1), 4),
+            (Monomial::from_variable(0, 2), 3)
+        ]))
+    )
 }
 
 #[test]
 fn mul_polynomials() {
-    let p = Polynomial(vec![1, 2, 3]);
-    let q = Polynomial(vec![1, 2]);
-    assert_eq!(p * q, Polynomial(vec![1, 4, 3 + 4, 6]));
-}
-
-#[test]
-fn equal_polynomials() {
-    let p = Polynomial(vec![]);
-    let q = Polynomial(vec![0, 0]);
-    assert!(p == q);
+    let p = Polynomial(Multiset::from_iter(vec![
+        (Monomial::from_variable(0, 0), 1),
+        (Monomial::from_variable(0, 1), 2),
+        (Monomial::from_variable(0, 2), 3),
+    ]));
+    let q = Polynomial(Multiset::from_iter(vec![
+        (Monomial::from_variable(0, 0), 1),
+        (Monomial::from_variable(0, 1), 2),
+    ]));
+    assert_eq!(
+        p * q,
+        Polynomial(Multiset::from_iter(vec![
+            (Monomial::from_variable(0, 0), 1),
+            (Monomial::from_variable(0, 1), 4),
+            (Monomial::from_variable(0, 2), 3 + 4),
+            (Monomial::from_variable(0, 3), 6)
+        ]))
+    )
 }
 
 #[test]
 fn polynomial_from_term() {
     let t = Term::Add(Term::Variable(0).into(), Term::Variable(0).into());
-    assert_eq!(Polynomial(vec![0, 2]), t.into());
+    assert_eq!(
+        Polynomial(Multiset::from_iter(vec![
+            (Monomial::from_variable(0, 0), 0),
+            (Monomial::from_variable(0, 1), 2)
+        ])),
+        t.into()
+    );
 }
 
 #[test]
 fn polynomial_from_mul_term() {
     let t = Term::S(Term::Mul(Term::Variable(0).into(), Term::Variable(0).into()).into());
-    assert_eq!(Polynomial(vec![1, 0, 1]), t.into());
+    assert_eq!(
+        Polynomial(Multiset::from_iter(vec![
+            (Monomial::from_variable(0, 0), 1),
+            (Monomial::from_variable(0, 2), 1)
+        ])),
+        t.into()
+    );
 }
 
 #[test]
 fn term_from_polynomial() {
-    let p = Polynomial(vec![1, 1, 1]);
+    let p = Polynomial(Multiset::from_iter(vec![
+        (Monomial::from_variable(0, 0), 1),
+        (Monomial::from_variable(0, 1), 1),
+        (Monomial::from_variable(0, 2), 1),
+    ]));
     assert_eq!(
         Term::Add(
             Term::Mul(
@@ -220,17 +319,13 @@ fn negated_equality_of_same_terms_is_not_provable_in_AB() {
 }
 
 fn reduce(mut left: Polynomial, mut right: Polynomial) -> (Polynomial, Polynomial) {
-    let left_clone = left.clone();
-    let right_clone = right.clone();
-    for (i, c) in left.0.iter_mut().enumerate() {
-        *c = c.saturating_sub(right_clone.coefficient(i));
-    }
+    let left_reduced_monomials = left.0.subtract(&right.0);
+    let right_reduced_monomials = right.0.subtract(&left.0);
 
-    for (i, c) in right.0.iter_mut().enumerate() {
-        *c = c.saturating_sub(left_clone.coefficient(i));
-    }
-
-    (left, right)
+    (
+        Polynomial(left_reduced_monomials),
+        Polynomial(right_reduced_monomials),
+    )
 }
 
 fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
@@ -239,23 +334,24 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
 
     let (left_poly, right_poly) = reduce(left_poly, right_poly);
 
-    if left_poly == Polynomial(vec![]) {
-        return right_poly.coefficient(0) > 0;
-    } else if right_poly == Polynomial(vec![]) {
-        return left_poly.coefficient(0) > 0;
+    if left_poly == Polynomial(Multiset::new()) {
+        return right_poly.coefficient(&Monomial::one()) > 0;
+    } else if right_poly == Polynomial(Multiset::new()) {
+        return left_poly.coefficient(&Monomial::one()) > 0;
     }
 
-    is_negated_equality_provable_in_AB(
-        Polynomial(vec![left_poly.evaluate_at_zero()]).into(),
-        Polynomial(vec![right_poly.evaluate_at_zero()]).into(),
-    ) && is_negated_equality_provable_in_AB(
-        left_poly.at_variable_plus_one(),
-        right_poly.at_variable_plus_one(),
-    )
+    is_negated_equality_provable_in_AB(left_poly.at_variable_zero(), right_poly.at_variable_zero())
+        && is_negated_equality_provable_in_AB(
+            left_poly.at_variable_plus_one(),
+            right_poly.at_variable_plus_one(),
+        )
 }
 
-#[derive(Debug)]
-struct Multiset<T> {
+#[derive(Debug, Clone)]
+struct Multiset<T>
+where
+    T: Hash + Eq,
+{
     elements: HashMap<T, u32>,
 }
 
@@ -289,7 +385,26 @@ where
 
 impl<T> Eq for Multiset<T> where T: Eq + Hash {}
 
-impl<T> Multiset<T> {
+impl<T> Hash for Multiset<T>
+where
+    T: Eq + Hash + Ord,
+{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut support: Vec<&T> = self.support().collect();
+        support.sort();
+        let hashable: Vec<(&T, u32)> = support
+            .into_iter()
+            .filter(|e| self.amount(e) > 0)
+            .map(|e| (e, self.amount(e)))
+            .collect();
+        hashable.hash(state)
+    }
+}
+
+impl<T> Multiset<T>
+where
+    T: Eq + Hash,
+{
     fn new() -> Self {
         Self {
             elements: HashMap::new(),
@@ -299,18 +414,17 @@ impl<T> Multiset<T> {
     fn support(&self) -> impl Iterator<Item = &T> {
         self.elements.keys()
     }
-}
 
-impl<T> Multiset<T>
-where
-    T: Eq + Hash,
-{
     fn amount(&self, element: &T) -> u32 {
         *self.elements.get(element).unwrap_or(&0)
     }
 
     fn amount_mut(&mut self, element: T) -> &mut u32 {
         self.elements.entry(element).or_insert(0)
+    }
+
+    fn amount_iter(&self) -> impl Iterator<Item = (&T, &u32)> {
+        self.elements.iter()
     }
 }
 
@@ -402,6 +516,21 @@ fn multiset_eq() {
     assert_eq!(left, right);
 }
 
+#[test]
+fn multiset_eq_for_empty() {
+    let left = Multiset::new();
+    let right = Multiset::from_iter(vec![(0, 0)]);
+
+    assert_eq!(left, right);
+}
+
 fn main() {
-    println!("{p:?}", p = Polynomial(vec![1, 2, 3]));
+    println!(
+        "{p:?}",
+        p = Polynomial(Multiset::from_iter(vec![
+            (Monomial::from_variable(0, 0), 1),
+            (Monomial::from_variable(0, 1), 2),
+            (Monomial::from_variable(0, 2), 3)
+        ]))
+    );
 }
