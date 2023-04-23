@@ -84,7 +84,15 @@ impl Mul for Monomial {
     type Output = Monomial;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Self(self.0.union(&rhs.0))
+        &self * &rhs
+    }
+}
+
+impl Mul for &Monomial {
+    type Output = Monomial;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Monomial(self.0.union(&rhs.0))
     }
 }
 
@@ -96,17 +104,20 @@ impl PartialOrd for Monomial {
 
 impl Ord for Monomial {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let mut self_variables: Vec<(u32, u32)> = self.variables().collect();
-        let mut other_variables: Vec<(u32, u32)> = other.variables().collect();
+        let mut self_variables: Vec<&u32> = self.0.iter().collect();
+        let mut other_variables: Vec<&u32> = other.0.iter().collect();
+        self_variables.sort_by(|x, y| x.cmp(y).reverse());
+        other_variables.sort_by(|x, y| x.cmp(y).reverse());
 
-        self_variables.sort_by_key(|(v, _)| *v);
-        other_variables.sort_by_key(|(v, _)| *v);
-
-        let self_sorted_amounts: Vec<u32> = self_variables.into_iter().map(|(_, n)| n).collect();
-        let other_sorted_amounts: Vec<u32> = other_variables.into_iter().map(|(_, n)| n).collect();
-
-        self_sorted_amounts.cmp(&other_sorted_amounts)
+        self_variables.cmp(&other_variables)
     }
+}
+
+#[test]
+fn monomial_order() {
+    let x = Monomial::from_variable(0, 1);
+    let y = Monomial::from_variable(1, 1);
+    assert!(y < &x * &y);
 }
 
 impl Polynomial {
@@ -985,6 +996,14 @@ where
 
         true
     }
+
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        let mut elements = vec![];
+        for (element, amount) in self.amount_iter() {
+            elements.extend(std::iter::repeat(element).take((*amount).try_into().unwrap()));
+        }
+        elements.into_iter()
+    }
 }
 
 impl<T> Multiset<T>
@@ -1081,6 +1100,14 @@ fn multiset_eq_for_empty() {
     let right = Multiset::from_iter(vec![(0, 0)]);
 
     assert_eq!(left, right);
+}
+
+#[test]
+fn multiset_iter() {
+    let multiset = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 3)]);
+    let mut elements: Vec<u32> = multiset.iter().copied().collect();
+    elements.sort();
+    assert_eq!(elements, vec![0, 1, 1, 2, 2, 2])
 }
 
 fn main() {
