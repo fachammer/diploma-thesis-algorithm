@@ -387,7 +387,7 @@ fn x_and_y_are_incomparable() {
 fn provability_in_AB() {
     let t = Term::S(Term::Zero.into());
     let u = Term::Zero;
-    assert!(is_negated_equality_provable_in_AB(t, u));
+    assert!(is_negated_equality_provable_in_AB(&t, &u));
 }
 
 #[test]
@@ -397,16 +397,16 @@ fn golden_ratio_polynomial_provability_in_AB() {
     let right = x + 1;
 
     assert!(is_negated_equality_provable_in_AB(
-        left.into(),
-        right.into()
+        &left.into(),
+        &right.into()
     ));
 }
 
 #[test]
 fn negated_equality_of_same_terms_is_not_provable_in_AB() {
     assert!(!is_negated_equality_provable_in_AB(
-        Term::S(Term::Zero.into()),
-        Term::S(Term::Zero.into())
+        &Term::S(Term::Zero.into()),
+        &Term::S(Term::Zero.into())
     ));
 }
 
@@ -417,8 +417,8 @@ fn even_odd_disequality_is_not_provable_in_AB() {
     let left = 2 * x;
     let right = 2 * y + 1;
     assert!(!is_negated_equality_provable_in_AB(
-        left.into(),
-        right.into()
+        &left.into(),
+        &right.into()
     ))
 }
 
@@ -429,8 +429,8 @@ fn two_xy_plus_one_not_equal_to_two_x_plus_two_y_in_AB() {
     let left = 2 * &x * &y + 1;
     let right = 2 * &x + 2 * &y;
     assert!(is_negated_equality_provable_in_AB(
-        left.into(),
-        right.into()
+        &left.into(),
+        &right.into()
     ))
 }
 
@@ -462,12 +462,12 @@ fn substitutions(mut variables: impl Iterator<Item = u32>) -> Vec<HashMap<u32, T
     output
 }
 
-fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
+fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {
     let right_free_variables = right.free_variables();
     let left_free_variables = left.free_variables();
     let free_variables = left_free_variables.union(&right_free_variables);
-    let left_poly = Polynomial::from(left);
-    let right_poly = Polynomial::from(right);
+    let left_poly = Polynomial::from(left.clone());
+    let right_poly = Polynomial::from(right.clone());
 
     let (left_poly, right_poly) = reduce(&left_poly, &right_poly);
 
@@ -485,8 +485,8 @@ fn is_negated_equality_provable_in_AB(left: Term, right: Term) -> bool {
 
     for substitution in substitutions {
         if !is_negated_equality_provable_in_AB(
-            left_poly.at_substitution(&substitution),
-            right_poly.at_substitution(&substitution),
+            &left_poly.at_substitution(&substitution),
+            &right_poly.at_substitution(&substitution),
         ) {
             return false;
         }
