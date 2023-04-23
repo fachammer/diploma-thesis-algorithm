@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Display,
     hash::Hash,
     ops::{Add, Mul, Sub},
     vec,
@@ -701,6 +702,125 @@ impl Proof {
     }
 }
 
+struct ProofDisplay<'a> {
+    proof: &'a Proof,
+    indentation: u32,
+}
+
+impl<'a> ProofDisplay<'a> {
+    fn indent(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for _ in 0..self.indentation {
+            write!(f, "  ")?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> Display for ProofDisplay<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.proof {
+            Proof::SuccessorNonZero { conclusion, term } => write!(
+                f,
+                "snz: {} != {} <=>_T {} != 0",
+                conclusion.0, conclusion.1, term
+            ),
+            Proof::Split {
+                conclusion,
+                variable,
+                zero_proof,
+                successor_proof,
+            } => {
+                writeln!(
+                    f,
+                    "split on x_{} for {} != {}:",
+                    variable, conclusion.0, conclusion.1
+                )?;
+                self.indent(f)?;
+                writeln!(
+                    f,
+                    "  x_{variable} -> 0: {}",
+                    ProofDisplay {
+                        proof: zero_proof,
+                        indentation: self.indentation + 1
+                    }
+                )?;
+                self.indent(f)?;
+                write!(
+                    f,
+                    "  x_{variable} -> s(x_{variable}): {}",
+                    ProofDisplay {
+                        proof: successor_proof,
+                        indentation: self.indentation + 1
+                    }
+                )
+            }
+        }
+    }
+}
+
+impl Display for Proof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        ProofDisplay {
+            proof: self,
+            indentation: 0,
+        }
+        .fmt(f)
+    }
+}
+
+impl Display for Term {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Polynomial::from(self.clone()).fmt(f)
+    }
+}
+
+impl Display for Polynomial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut non_zero: Vec<&Monomial> = self
+            .0
+            .amount_iter()
+            .filter_map(|(m, a)| if *a > 0 { Some(m) } else { None })
+            .collect();
+        non_zero.sort();
+
+        if non_zero.is_empty() {
+            return write!(f, "0");
+        }
+        let strings: Vec<String> = non_zero
+            .into_iter()
+            .map(|monomial| {
+                let amount = self.0.amount(monomial);
+                if monomial == &Monomial::one() {
+                    format!("{amount}")
+                } else {
+                    format!("{amount}{monomial}")
+                }
+            })
+            .collect();
+        write!(f, "{}", strings.join(" + "))
+    }
+}
+
+impl Display for Monomial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut non_zero: Vec<(&u32, &u32)> =
+            self.0.amount_iter().filter(|(_, a)| **a > 0).collect();
+        non_zero.sort();
+        if non_zero.is_empty() {
+            return write!(f, "1");
+        }
+
+        let strings: Vec<String> = non_zero
+            .into_iter()
+            .map(|(variable, amount)| match amount {
+                1 => format!("x_{variable}"),
+                _ => format!("x_{variable}^{amount}"),
+            })
+            .collect();
+        write!(f, "{}", strings.join(""))
+    }
+}
+
 #[test]
 fn check_valid_successor_non_zero_proof() {
     let proof = Proof::SuccessorNonZero {
@@ -974,10 +1094,11 @@ fn main() {
     );
 
     let x = Polynomial::from_variable(0);
-    let left = &x * &x;
-    let right = x + 1;
+    let y = Polynomial::from_variable(1);
+    let left = 2 * &x * &y + 1;
+    let right = 2 * &x + 2 * &y;
     println!(
-        "print proof: {:?}",
-        search_proof(&left.into(), &right.into())
+        "print proof:\n{}",
+        search_proof(&left.into(), &right.into()).unwrap()
     )
 }
