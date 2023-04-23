@@ -537,7 +537,9 @@ fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
         return None;
     }
 
-    let (proof_structure, substitutions) = substitutions(free_variables.cloned());
+    let mut free_variables: Vec<u32> = free_variables.cloned().collect();
+    free_variables.sort();
+    let (proof_structure, substitutions) = substitutions(free_variables.into_iter());
     let mut proofs: Vec<(Substitution, Proof)> = vec![];
 
     for substitution in substitutions {
