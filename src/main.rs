@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Sub},
     vec,
 };
 
@@ -142,6 +142,12 @@ impl Polynomial {
 
     fn is_strictly_monomially_comparable_to(&self, other: &Polynomial) -> bool {
         self.is_monomially_smaller_than(other) || other.is_monomially_smaller_than(self)
+    }
+
+    fn predecessor(&self) -> Polynomial {
+        let mut polynomial = self.clone();
+        polynomial.0.amount_mut(Monomial::one()).saturating_sub(1);
+        polynomial
     }
 }
 
@@ -444,10 +450,12 @@ fn reduce(left: &Polynomial, right: &Polynomial) -> (Polynomial, Polynomial) {
     )
 }
 
-fn substitutions(mut variables: impl Iterator<Item = u32>) -> Vec<HashMap<u32, Term>> {
-    let Some(variable) = variables.next() else {return vec![];};
+fn substitutions(
+    mut variables: impl Iterator<Item = u32>,
+) -> (ProofWithHoles, Vec<HashMap<u32, Term>>) {
+    let Some(variable) = variables.next() else {return (ProofWithHoles::Hole,vec![Substitution::new()]);};
 
-    let subs = substitutions(variables);
+    let (proof, subs) = substitutions(variables);
     let mut output = Vec::new();
 
     for sub in subs {
@@ -459,10 +467,34 @@ fn substitutions(mut variables: impl Iterator<Item = u32>) -> Vec<HashMap<u32, T
         output.push(s_sub);
     }
 
-    output
+    (
+        ProofWithHoles::Split {
+            variable,
+            zero_proof: Box::new(proof.clone()),
+            successor_proof: Box::new(proof.clone()),
+        },
+        output,
+    )
+}
+
+#[test]
+fn test_substitutions() {
+    assert_eq!(
+        substitutions(vec![0].into_iter()).1,
+        (vec![
+            HashMap::from_iter(vec![(0, Term::Zero)]),
+            HashMap::from_iter(vec![(0, Term::S(Term::Variable(0).into()))])
+        ])
+    );
 }
 
 fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {
+    search_proof(left, right).is_some()
+}
+
+type Substitution = HashMap<u32, Term>;
+
+fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     let right_free_variables = right.free_variables();
     let left_free_variables = left.free_variables();
     let free_variables = left_free_variables.union(&right_free_variables);
@@ -472,28 +504,132 @@ fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {
     let (left_poly, right_poly) = reduce(&left_poly, &right_poly);
 
     if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
-        return false;
+        return None;
     }
 
     if left_poly == 0.into() {
-        return right_poly.coefficient(&Monomial::one()) > 0;
+        if right_poly.coefficient(&Monomial::one()) > 0 {
+            return Some(Proof::SuccessorNonZero {
+                conclusion: (left_poly.into(), right_poly.clone().into()),
+                term: right_poly.predecessor().into(),
+            });
+        }
+        return None;
     } else if right_poly == 0.into() {
-        return left_poly.coefficient(&Monomial::one()) > 0;
+        if left_poly.coefficient(&Monomial::one()) > 0 {
+            return Some(Proof::SuccessorNonZero {
+                conclusion: (left_poly.clone().into(), right_poly.into()),
+                term: left_poly.predecessor().into(),
+            });
+        }
+        return None;
     }
 
-    let substitutions = substitutions(free_variables.cloned());
+    let (proof_structure, substitutions) = substitutions(free_variables.cloned());
+    let mut proofs: Vec<(Substitution, Proof)> = vec![];
 
     for substitution in substitutions {
-        if !is_negated_equality_provable_in_AB(
+        let Some(proof) = search_proof(
             &left_poly.at_substitution(&substitution),
             &right_poly.at_substitution(&substitution),
-        ) {
-            return false;
-        }
+        ) else {
+            return None;
+        };
+        proofs.push((substitution, proof));
     }
-    true
+
+    Some(
+        proof_with_holes_to_proof(
+            (left.clone(), right.clone()),
+            &proof_structure,
+            &proofs,
+            &Substitution::new(),
+        )
+        .expect("there are base proofs for every substitution"),
+    )
 }
 
+fn proof_with_holes_to_proof(
+    conclusion: (Term, Term),
+    proof_structure: &ProofWithHoles,
+    base_proofs: &Vec<(Substitution, Proof)>,
+    substitution: &Substitution,
+) -> Result<Proof, Substitution> {
+    match proof_structure {
+        ProofWithHoles::Hole => {
+            let proof = base_proofs
+                .iter()
+                .filter_map(|(s, p)| {
+                    if s == substitution {
+                        Some(p.clone())
+                    } else {
+                        None
+                    }
+                })
+                .next();
+            proof.ok_or_else(|| substitution.clone())
+        }
+        ProofWithHoles::Split {
+            variable,
+            zero_proof,
+            successor_proof,
+        } => {
+            let zero_sub = Substitution::from_iter(vec![(*variable, Term::Zero)]);
+            let zero_proof = proof_with_holes_to_proof(
+                (
+                    conclusion.0.substitute(&zero_sub),
+                    conclusion.1.substitute(&zero_sub),
+                ),
+                zero_proof,
+                base_proofs,
+                &compose_substitutions(substitution, &zero_sub),
+            )?;
+
+            let s_sub = Substitution::from_iter(vec![(
+                *variable,
+                Term::S(Term::Variable(*variable).into()),
+            )]);
+            let successor_proof = proof_with_holes_to_proof(
+                (
+                    conclusion.0.substitute(&s_sub),
+                    conclusion.1.substitute(&s_sub),
+                ),
+                successor_proof,
+                base_proofs,
+                &compose_substitutions(substitution, &s_sub),
+            )?;
+            Ok(Proof::Split {
+                conclusion,
+                variable: *variable,
+                zero_proof: Box::new(zero_proof),
+                successor_proof: Box::new(successor_proof),
+            })
+        }
+    }
+}
+
+fn compose_substitutions(left: &Substitution, right: &Substitution) -> Substitution {
+    let mut substitution = left.clone();
+    for (v, t) in right.iter() {
+        substitution
+            .entry(*v)
+            .and_modify(|term| *term = term.substitute(right))
+            .or_insert_with(|| t.clone());
+    }
+    substitution
+}
+
+#[derive(Clone)]
+enum ProofWithHoles {
+    Hole,
+    Split {
+        variable: u32,
+        zero_proof: Box<ProofWithHoles>,
+        successor_proof: Box<ProofWithHoles>,
+    },
+}
+
+#[derive(Clone, Debug)]
 enum Proof {
     SuccessorNonZero {
         conclusion: (Term, Term),
@@ -829,11 +965,19 @@ fn multiset_eq_for_empty() {
 
 fn main() {
     println!(
-        "{p:?}",
+        "print polynomial: {p:?}",
         p = Polynomial(Multiset::from_iter(vec![
             (Monomial::from_variable(0, 0), 1),
             (Monomial::from_variable(0, 1), 2),
             (Monomial::from_variable(0, 2), 3)
         ]))
     );
+
+    let x = Polynomial::from_variable(0);
+    let left = &x * &x;
+    let right = x + 1;
+    println!(
+        "print proof: {:?}",
+        search_proof(&left.into(), &right.into())
+    )
 }
