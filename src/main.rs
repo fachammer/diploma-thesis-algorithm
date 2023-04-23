@@ -792,7 +792,7 @@ impl Display for Polynomial {
             .amount_iter()
             .filter_map(|(m, a)| if *a > 0 { Some(m) } else { None })
             .collect();
-        non_zero.sort();
+        non_zero.sort_by(|x, y| x.cmp(y).reverse());
 
         if non_zero.is_empty() {
             return write!(f, "0");
