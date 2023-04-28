@@ -30,7 +30,7 @@ impl Proof {
     pub fn check(&self) -> bool {
         match self {
             Proof::SuccessorNonZero { conclusion, term } => {
-                Self::are_equivalent_in_T(conclusion, &(Term::S(term.clone().into()), Term::Zero))
+                Self::are_equivalent(conclusion, &(Term::S(term.clone().into()), Term::Zero))
             }
             Proof::Split {
                 conclusion,
@@ -56,10 +56,10 @@ impl Proof {
                 let conclusion_at_s_left = conclusion.0.substitute(&s_sub);
                 let conclusion_at_s_right = conclusion.1.substitute(&s_sub);
 
-                Self::are_equivalent_in_T(
+                Self::are_equivalent(
                     &(conclusion_at_zero_left, conclusion_at_zero_right),
                     zero_conclusion,
-                ) && Self::are_equivalent_in_T(
+                ) && Self::are_equivalent(
                     &(conclusion_at_s_left, conclusion_at_s_right),
                     successor_conclusion,
                 )
@@ -67,7 +67,7 @@ impl Proof {
         }
     }
 
-    fn are_equivalent_in_T(left: &(Term, Term), right: &(Term, Term)) -> bool {
+    fn are_equivalent(left: &(Term, Term), right: &(Term, Term)) -> bool {
         let left_polys: (Polynomial, Polynomial) = (left.0.clone().into(), left.1.clone().into());
         let left = reduce(&left_polys.0, &left_polys.1);
         let right_polys: (Polynomial, Polynomial) =

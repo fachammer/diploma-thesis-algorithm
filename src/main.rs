@@ -10,7 +10,7 @@ use std::vec;
 use polynomial::{Monomial, Polynomial};
 use term::Term;
 
-use crate::proof_search::search_proof;
+use crate::proof_search::{is_negated_equality_provable, search_proof};
 
 fn main() {
     println!(
@@ -29,6 +29,10 @@ fn main() {
     let y = Polynomial::from_variable(1);
     let left = 2 * &x * &y + 1;
     let right = 2 * &x + 2 * &y;
+    assert!(is_negated_equality_provable(
+        &left.clone().into(),
+        &right.clone().into()
+    ));
     let proof = search_proof(&left.into(), &right.into());
     let proof = proof.expect("proof should be found");
 

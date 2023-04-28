@@ -8,7 +8,7 @@ use crate::{
     term::Term,
 };
 
-pub fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {
+pub fn is_negated_equality_provable(left: &Term, right: &Term) -> bool {
     search_proof(left, right).is_some()
 }
 
@@ -45,7 +45,7 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
 
     let mut free_variables: Vec<u32> = free_variables.cloned().collect();
     free_variables.sort();
-    let (proof_structure, substitutions) = substitutions(free_variables.into_iter());
+    let (proof_structure, substitutions) = split_substitutions(free_variables.into_iter());
     let mut proofs: Vec<(Substitution, Proof)> = vec![];
 
     for substitution in substitutions {
@@ -128,12 +128,12 @@ fn proof_with_holes_to_proof(
     }
 }
 
-fn substitutions(
+fn split_substitutions(
     mut variables: impl Iterator<Item = u32>,
 ) -> (ProofWithHoles, Vec<HashMap<u32, Term>>) {
     let Some(variable) = variables.next() else {return (ProofWithHoles::Hole,vec![Substitution::new()]);};
 
-    let (proof, subs) = substitutions(variables);
+    let (proof, subs) = split_substitutions(variables);
     let mut output = Vec::new();
 
     for sub in subs {
@@ -207,60 +207,51 @@ mod test {
     use super::*;
 
     #[test]
-    fn provability_in_AB() {
+    fn provability() {
         let t = Term::S(Term::Zero.into());
         let u = Term::Zero;
-        assert!(is_negated_equality_provable_in_AB(&t, &u));
+        assert!(is_negated_equality_provable(&t, &u));
     }
 
     #[test]
-    fn golden_ratio_polynomial_provability_in_AB() {
+    fn golden_ratio_polynomial_provability() {
         let x = Polynomial::from_variable(0);
         let left = &x * &x;
         let right = x + 1;
 
-        assert!(is_negated_equality_provable_in_AB(
-            &left.into(),
-            &right.into()
-        ));
+        assert!(is_negated_equality_provable(&left.into(), &right.into()));
     }
 
     #[test]
-    fn negated_equality_of_same_terms_is_not_provable_in_AB() {
-        assert!(!is_negated_equality_provable_in_AB(
+    fn negated_equality_of_same_terms_is_not_provable() {
+        assert!(!is_negated_equality_provable(
             &Term::S(Term::Zero.into()),
             &Term::S(Term::Zero.into())
         ));
     }
 
     #[test]
-    fn even_odd_disequality_is_not_provable_in_AB() {
+    fn even_odd_disequality_is_not_provable() {
         let x = Polynomial::from_variable(0);
         let y = Polynomial::from_variable(1);
         let left = 2 * x;
         let right = 2 * y + 1;
-        assert!(!is_negated_equality_provable_in_AB(
-            &left.into(),
-            &right.into()
-        ))
+        assert!(!is_negated_equality_provable(&left.into(), &right.into()))
     }
 
     #[test]
-    fn two_xy_plus_one_not_equal_to_two_x_plus_two_y_in_AB() {
+    fn two_xy_plus_one_not_equal_to_two_x_plus_two_y_is_provable() {
         let x = Polynomial::from_variable(0);
         let y = Polynomial::from_variable(1);
         let left = 2 * &x * &y + 1;
         let right = 2 * &x + 2 * &y;
-        assert!(is_negated_equality_provable_in_AB(
-            &left.into(),
-            &right.into()
-        ))
+        assert!(is_negated_equality_provable(&left.into(), &right.into()))
     }
 
     #[test]
     fn test_substitutions() {
         assert_eq!(
-            substitutions(vec![0].into_iter()).1,
+            split_substitutions(vec![0].into_iter()).1,
             (vec![
                 HashMap::from_iter(vec![(0, Term::Zero)]),
                 HashMap::from_iter(vec![(0, Term::S(Term::Variable(0).into()))])
