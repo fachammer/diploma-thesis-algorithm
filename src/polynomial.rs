@@ -19,7 +19,7 @@ impl Monomial {
     }
 
     pub fn into_variables_iter(self) -> impl Iterator<Item = u32> {
-        self.0.into_monomials_iter()
+        self.0.into_iter()
     }
 
     pub fn strictly_divides(&self, other: &Monomial) -> bool {
@@ -38,16 +38,9 @@ impl Monomial {
 impl Mul for Monomial {
     type Output = Monomial;
 
-    fn mul(self, rhs: Self) -> Self::Output {
-        &self * &rhs
-    }
-}
-
-impl Mul for &Monomial {
-    type Output = Monomial;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Monomial(self.0.union(&rhs.0))
+    fn mul(mut self, rhs: Self) -> Self::Output {
+        self.0.extend(rhs.0.into_iter());
+        self
     }
 }
 
@@ -117,7 +110,7 @@ impl Polynomial {
     }
 
     pub fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
-        let (left, right) = reduce(self, other);
+        let (left, right) = reduce(self.clone(), other.clone());
 
         for m_1 in left.0.support() {
             if right.0.support().all(|m_2| !m_1.strictly_divides(m_2)) {
@@ -144,9 +137,9 @@ impl Polynomial {
     }
 }
 
-pub fn reduce(left: &Polynomial, right: &Polynomial) -> (Polynomial, Polynomial) {
-    let left_reduced_monomials = left.0.subtract(&right.0);
-    let right_reduced_monomials = right.0.subtract(&left.0);
+pub fn reduce(left: Polynomial, right: Polynomial) -> (Polynomial, Polynomial) {
+    let left_reduced_monomials = left.0.clone().subtract(right.0.clone());
+    let right_reduced_monomials = right.0.subtract(left.0);
 
     (
         Polynomial(left_reduced_monomials),
@@ -163,8 +156,9 @@ impl From<Polynomial> for Multiset<Monomial> {
 impl Add for Polynomial {
     type Output = Self;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        &self + &rhs
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.0.extend(rhs.0.into_iter());
+        self
     }
 }
 
@@ -176,40 +170,8 @@ impl Add<u32> for Polynomial {
     }
 }
 
-impl Add<u32> for &Polynomial {
-    type Output = Polynomial;
-
-    fn add(self, rhs: u32) -> Self::Output {
-        self + &Polynomial::from(rhs)
-    }
-}
-
-impl Add for &Polynomial {
-    type Output = Polynomial;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Polynomial(self.0.union(&rhs.0))
-    }
-}
-
-impl Add<&Polynomial> for Polynomial {
-    type Output = Polynomial;
-
-    fn add(self, rhs: &Polynomial) -> Self::Output {
-        &self + rhs
-    }
-}
-
 impl Mul for Polynomial {
     type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        &self * &rhs
-    }
-}
-
-impl Mul for &Polynomial {
-    type Output = Polynomial;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let mut output: Multiset<Monomial> = Multiset::new();
@@ -221,22 +183,6 @@ impl Mul for &Polynomial {
             }
         }
         Polynomial(output)
-    }
-}
-
-impl Mul<&Polynomial> for Polynomial {
-    type Output = Polynomial;
-
-    fn mul(self, rhs: &Polynomial) -> Self::Output {
-        &self * rhs
-    }
-}
-
-impl Mul<&Polynomial> for u32 {
-    type Output = Polynomial;
-
-    fn mul(self, rhs: &Polynomial) -> Self::Output {
-        &Polynomial::from(self) * rhs
     }
 }
 
@@ -283,9 +229,9 @@ mod test {
 
     #[test]
     fn monomial_order() {
-        let x = Monomial::from_variable(0, 1);
-        let y = Monomial::from_variable(1, 1);
-        assert!(y < &x * &y);
+        let x = || Monomial::from_variable(0, 1);
+        let y = || Monomial::from_variable(1, 1);
+        assert!(y() < x() * y());
     }
 
     #[test]
@@ -311,18 +257,18 @@ mod test {
 
     #[test]
     fn add_polynomials() {
-        let x = Polynomial::from_variable(0);
-        let p = 3 * &x * &x + 2 * &x + 1;
-        let q = 2 * &x + 1;
-        assert_eq!(p + q, 3 * &x * &x + 4 * &x + 2)
+        let x = || Polynomial::from_variable(0);
+        let p = 3 * x() * x() + 2 * x() + 1;
+        let q = 2 * x() + 1;
+        assert_eq!(p + q, 3 * x() * x() + 4 * x() + 2)
     }
 
     #[test]
     fn mul_polynomials() {
-        let x = Polynomial::from_variable(0);
-        let p = 3 * &x * &x + 2 * &x + 1;
-        let q = 2 * &x + 1;
-        assert_eq!(p * q, 6 * &x * &x * &x + 7 * &x * &x + 4 * &x + 1)
+        let x = || Polynomial::from_variable(0);
+        let p = 3 * x() * x() + 2 * x() + 1;
+        let q = 2 * x() + 1;
+        assert_eq!(p * q, 6 * x() * x() * x() + 7 * x() * x() + 4 * x() + 1)
     }
 
     #[test]
@@ -335,14 +281,14 @@ mod test {
     #[test]
     fn polynomial_from_mul_term() {
         let t = Term::S(Term::Mul(Term::Variable(0).into(), Term::Variable(0).into()).into());
-        let x = Polynomial::from_variable(0);
-        assert_eq!(&x * &x + 1, t.into());
+        let x = || Polynomial::from_variable(0);
+        assert_eq!(x() * x() + 1, t.into());
     }
 
     #[test]
     fn term_from_polynomial() {
-        let x = Polynomial::from_variable(0);
-        let p = &x * &x + x + 1;
+        let x = || Polynomial::from_variable(0);
+        let p = x() * x() + x() + 1;
         assert_eq!(
             Term::Add(
                 Term::Mul(
@@ -362,8 +308,8 @@ mod test {
 
     #[test]
     fn x_is_monomially_smaller_than_x_squared_plus_one() {
-        let x = Polynomial::from_variable(0);
-        assert!(x.is_monomially_smaller_than(&(&x * &x + 1)))
+        let x = || Polynomial::from_variable(0);
+        assert!(x().is_monomially_smaller_than(&(x() * x() + 1)))
     }
 
     #[test]

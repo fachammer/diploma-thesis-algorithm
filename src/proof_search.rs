@@ -19,7 +19,7 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     let left_poly = Polynomial::from(left.clone());
     let right_poly = Polynomial::from(right.clone());
 
-    let (left_poly, right_poly) = reduce(&left_poly, &right_poly);
+    let (left_poly, right_poly) = reduce(left_poly, right_poly);
 
     if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
         return None;
@@ -190,7 +190,7 @@ impl From<Polynomial> for Term {
     fn from(p: Polynomial) -> Self {
         let mut summands = vec![];
         let monomials: Multiset<Monomial> = p.into();
-        let mut monomials: Vec<Monomial> = monomials.into_monomials_iter().collect();
+        let mut monomials: Vec<Monomial> = monomials.into_iter().collect();
         monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
         for monomial in monomials {
             summands.push(monomial.clone().into())
@@ -215,9 +215,9 @@ mod test {
 
     #[test]
     fn golden_ratio_polynomial_provability() {
-        let x = Polynomial::from_variable(0);
-        let left = &x * &x;
-        let right = x + 1;
+        let x = || Polynomial::from_variable(0);
+        let left = x() * x();
+        let right = x() + 1;
 
         assert!(is_negated_equality_provable(&left.into(), &right.into()));
     }
@@ -232,19 +232,19 @@ mod test {
 
     #[test]
     fn even_odd_disequality_is_not_provable() {
-        let x = Polynomial::from_variable(0);
-        let y = Polynomial::from_variable(1);
-        let left = 2 * x;
-        let right = 2 * y + 1;
+        let x = || Polynomial::from_variable(0);
+        let y = || Polynomial::from_variable(1);
+        let left = 2 * x();
+        let right = 2 * y() + 1;
         assert!(!is_negated_equality_provable(&left.into(), &right.into()))
     }
 
     #[test]
     fn two_xy_plus_one_not_equal_to_two_x_plus_two_y_is_provable() {
-        let x = Polynomial::from_variable(0);
-        let y = Polynomial::from_variable(1);
-        let left = 2 * &x * &y + 1;
-        let right = 2 * &x + 2 * &y;
+        let x = || Polynomial::from_variable(0);
+        let y = || Polynomial::from_variable(1);
+        let left = 2 * x() * y() + 1;
+        let right = 2 * x() + 2 * y();
         assert!(is_negated_equality_provable(&left.into(), &right.into()))
     }
 

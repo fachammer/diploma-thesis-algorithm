@@ -69,10 +69,10 @@ impl Proof {
 
     fn are_equivalent(left: &(Term, Term), right: &(Term, Term)) -> bool {
         let left_polys: (Polynomial, Polynomial) = (left.0.clone().into(), left.1.clone().into());
-        let left = reduce(&left_polys.0, &left_polys.1);
+        let left = reduce(left_polys.0, left_polys.1);
         let right_polys: (Polynomial, Polynomial) =
             (right.0.clone().into(), right.1.clone().into());
-        let right = reduce(&right_polys.0, &right_polys.1);
+        let right = reduce(right_polys.0, right_polys.1);
         left.0 == right.0 && left.1 == right.1 || left.0 == right.1 && left.1 == right.0
     }
 }
@@ -179,9 +179,9 @@ mod test {
 
     #[test]
     fn check_proof_for_golden_ratio_polynomial_is_valid() {
-        let x = Polynomial::from_variable(0);
+        let x = || Polynomial::from_variable(0);
         let proof = Proof::Split {
-            conclusion: ((&x * &x).into(), (&x + 1).into()),
+            conclusion: ((x() * x()).into(), (x() + 1).into()),
             variable: 0,
             zero_proof: Proof::SuccessorNonZero {
                 conclusion: (Term::Zero, Term::S(Term::Zero.into())),
@@ -189,7 +189,7 @@ mod test {
             }
             .into(),
             successor_proof: Proof::Split {
-                conclusion: ((&x * &x + 2 * &x + 1).into(), (&x + 2).into()),
+                conclusion: ((x() * x() + 2 * x() + 1).into(), (x() + 2).into()),
                 variable: 0,
                 zero_proof: Proof::SuccessorNonZero {
                     conclusion: (Term::Zero, Term::S(Term::Zero.into())),
@@ -197,8 +197,8 @@ mod test {
                 }
                 .into(),
                 successor_proof: Proof::SuccessorNonZero {
-                    conclusion: ((&x * &x + 3 * &x + 1).into(), Term::Zero),
-                    term: (&x * &x + 3 * x).into(),
+                    conclusion: ((x() * x() + 3 * x() + 1).into(), Term::Zero),
+                    term: (x() * x() + 3 * x()).into(),
                 }
                 .into(),
             }

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::Hash;
 
 #[derive(Debug, Clone)]
@@ -77,6 +77,10 @@ where
         self.elements.iter()
     }
 
+    pub fn amount_iter_mut(&mut self) -> impl Iterator<Item = (&T, &mut u32)> {
+        self.elements.iter_mut()
+    }
+
     pub fn into_amount_iter(self) -> impl Iterator<Item = (T, u32)> {
         self.elements.into_iter()
     }
@@ -111,32 +115,16 @@ impl<T> Multiset<T>
 where
     T: Eq + Hash + Clone,
 {
-    pub fn union(&self, other: &Self) -> Self {
-        let mut result = Self::new();
-        let self_support: HashSet<&T> = self.support().collect();
-        let other_support = other.support().collect();
-
-        let support = self_support.union(&other_support);
-
-        for e in support {
-            *result.amount_mut((*e).clone()) = self.amount(e) + other.amount(e);
+    pub fn subtract(mut self, other: Self) -> Self {
+        for (e, amount) in self.amount_iter_mut() {
+            *amount = amount.saturating_sub(other.amount(e));
         }
 
-        result
-    }
-
-    pub fn subtract(&self, other: &Self) -> Self {
-        let mut result = Self::new();
-
-        for e in self.support() {
-            *result.amount_mut((*e).clone()) = self.amount(e).saturating_sub(other.amount(e));
-        }
-
-        result
+        self
     }
 
     #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-    pub fn into_monomials_iter(self) -> impl Iterator<Item = T> {
+    pub fn into_iter(self) -> impl Iterator<Item = T> {
         let mut elements = vec![];
         for (element, amount) in self.into_amount_iter() {
             elements.extend(
@@ -151,25 +139,36 @@ where
     }
 }
 
+impl<T> Extend<T> for Multiset<T>
+where
+    T: Eq + Hash,
+{
+    fn extend<U: IntoIterator<Item = T>>(&mut self, iter: U) {
+        for element in iter {
+            let value = self.elements.entry(element).or_insert(0);
+            *value += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-
     use super::*;
 
     #[test]
-    fn multiset_union() {
-        let left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
+    fn multiset_extend() {
+        let mut left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
         let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
-        let union = left.union(&right);
+        left.extend(right.into_iter());
 
-        assert_eq!(union, Multiset::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
+        assert_eq!(left, Multiset::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
     }
 
     #[test]
     fn multiset_subtract() {
         let left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
         let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
-        let difference = left.subtract(&right);
+        let difference = left.subtract(right);
 
         assert_eq!(difference.amount(&0), 2);
         assert_eq!(difference.amount(&1), 0);
