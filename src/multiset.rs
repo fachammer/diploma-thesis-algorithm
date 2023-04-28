@@ -60,7 +60,9 @@ where
     }
 
     pub fn support(&self) -> impl Iterator<Item = &T> {
-        self.elements.keys()
+        self.elements
+            .iter()
+            .filter_map(|(k, v)| if *v > 0 { Some(k) } else { None })
     }
 
     pub fn amount(&self, element: &T) -> u32 {
