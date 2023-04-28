@@ -32,7 +32,6 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     if left_poly == 0.into() {
         if right_poly.coefficient(&Monomial::one()) > 0 {
             return Some(Proof::SuccessorNonZero {
-                conclusion: TermDisequality::from_terms(left_poly, right_poly.clone()),
                 term: right_poly.predecessor().into(),
             });
         }
@@ -40,7 +39,6 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     } else if right_poly == 0.into() {
         if left_poly.coefficient(&Monomial::one()) > 0 {
             return Some(Proof::SuccessorNonZero {
-                conclusion: TermDisequality::from_terms(left_poly.clone(), right_poly),
                 term: left_poly.predecessor().into(),
             });
         }

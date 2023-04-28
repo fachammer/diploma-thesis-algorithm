@@ -5,7 +5,6 @@ use crate::{disequality::TermDisequality, term::Term};
 #[derive(Clone, Debug)]
 pub enum Proof {
     SuccessorNonZero {
-        conclusion: TermDisequality,
         term: Term,
     },
     Split {
@@ -17,18 +16,18 @@ pub enum Proof {
 }
 
 impl Proof {
-    fn conclusion(&self) -> &TermDisequality {
+    fn conclusion(&self) -> TermDisequality {
         match self {
-            Proof::SuccessorNonZero { conclusion, .. } => conclusion,
-            Proof::Split { conclusion, .. } => conclusion,
+            Proof::SuccessorNonZero { term } => {
+                TermDisequality::from_terms(Term::S(term.clone().into()), Term::Zero)
+            }
+            Proof::Split { conclusion, .. } => conclusion.clone(),
         }
     }
 
     pub fn check(&self) -> bool {
         match self {
-            Proof::SuccessorNonZero { conclusion, term } => conclusion.is_equivalent_to(
-                &TermDisequality::from_terms(Term::S(term.clone().into()), Term::Zero),
-            ),
+            Proof::SuccessorNonZero { .. } => true,
             Proof::Split {
                 conclusion,
                 variable,
@@ -51,8 +50,8 @@ impl Proof {
                 )]);
                 let conclusion_at_s = conclusion.substitute(&s_sub);
 
-                conclusion_at_zero.is_equivalent_to(zero_conclusion)
-                    && conclusion_at_s.is_equivalent_to(successor_conclusion)
+                conclusion_at_zero.is_equivalent_to(&zero_conclusion)
+                    && conclusion_at_s.is_equivalent_to(&successor_conclusion)
             }
         }
     }
@@ -75,12 +74,9 @@ impl<'a> ProofDisplay<'a> {
 impl<'a> Display for ProofDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.proof {
-            Proof::SuccessorNonZero { conclusion, term } => write!(
-                f,
-                "snz: {} <=>_T {} != 0",
-                conclusion,
-                Term::S(term.clone().into())
-            ),
+            Proof::SuccessorNonZero { term } => {
+                write!(f, "snz: {} != 0", Term::S(term.clone().into()))
+            }
             Proof::Split {
                 conclusion,
                 variable,
@@ -126,36 +122,6 @@ mod test {
     use crate::polynomial::Polynomial;
 
     use super::*;
-    #[test]
-    fn check_valid_successor_non_zero_proof() {
-        let proof = Proof::SuccessorNonZero {
-            conclusion: TermDisequality::from_terms(Term::S(Term::Zero.into()), Term::Zero),
-            term: Term::Zero,
-        };
-        assert!(proof.check())
-    }
-
-    #[test]
-    fn check_valid_successor_non_zero_proof_with_common_monomials() {
-        let left: Polynomial = 2.into();
-        let right: Polynomial = 1.into();
-        let proof = Proof::SuccessorNonZero {
-            conclusion: TermDisequality::from_terms(left, right),
-            term: Term::Zero,
-        };
-        assert!(proof.check())
-    }
-
-    #[test]
-    fn check_invalid_successor_non_zero_proof() {
-        let x = Polynomial::from_variable(0);
-        let y = Polynomial::from_variable(1);
-        let proof = Proof::SuccessorNonZero {
-            conclusion: TermDisequality::from_terms(x, y),
-            term: Term::S(Term::Zero.into()),
-        };
-        assert!(!proof.check())
-    }
 
     #[test]
     fn check_proof_for_golden_ratio_polynomial_is_valid() {
@@ -163,21 +129,12 @@ mod test {
         let proof = Proof::Split {
             conclusion: TermDisequality::from_terms(x() * x(), x() + 1),
             variable: 0,
-            zero_proof: Proof::SuccessorNonZero {
-                conclusion: TermDisequality::from_terms(Term::Zero, Term::S(Term::Zero.into())),
-                term: Term::Zero,
-            }
-            .into(),
+            zero_proof: Proof::SuccessorNonZero { term: Term::Zero }.into(),
             successor_proof: Proof::Split {
                 conclusion: TermDisequality::from_terms(x() * x() + 2 * x() + 1, x() + 2),
                 variable: 0,
-                zero_proof: Proof::SuccessorNonZero {
-                    conclusion: TermDisequality::from_terms(Term::Zero, Term::S(Term::Zero.into())),
-                    term: Term::Zero,
-                }
-                .into(),
+                zero_proof: Proof::SuccessorNonZero { term: Term::Zero }.into(),
                 successor_proof: Proof::SuccessorNonZero {
-                    conclusion: TermDisequality::from_terms(x() * x() + 3 * x() + 1, Term::Zero),
                     term: (x() * x() + 3 * x()).into(),
                 }
                 .into(),
@@ -193,16 +150,8 @@ mod test {
         let proof = Proof::Split {
             conclusion: TermDisequality::from_terms(x, Term::Zero),
             variable: 0,
-            zero_proof: Proof::SuccessorNonZero {
-                conclusion: TermDisequality::from_terms(Term::Zero, Term::S(Term::Zero.into())),
-                term: Term::Zero,
-            }
-            .into(),
-            successor_proof: Proof::SuccessorNonZero {
-                conclusion: TermDisequality::from_terms(Term::Zero, Term::S(Term::Zero.into())),
-                term: Term::Zero,
-            }
-            .into(),
+            zero_proof: Proof::SuccessorNonZero { term: Term::Zero }.into(),
+            successor_proof: Proof::SuccessorNonZero { term: Term::Zero }.into(),
         };
         assert!(!proof.check())
     }
