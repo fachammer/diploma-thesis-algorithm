@@ -27,7 +27,7 @@ impl Proof {
         }
     }
 
-    fn check(&self) -> bool {
+    pub fn check(&self) -> bool {
         match self {
             Proof::SuccessorNonZero { conclusion, term } => {
                 Self::are_equivalent_in_T(conclusion, &(Term::S(term.clone().into()), Term::Zero))

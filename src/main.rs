@@ -14,7 +14,7 @@ use crate::proof_search::search_proof;
 
 fn main() {
     println!(
-        "print polynomial: {p:?}",
+        "print polynomial: {p}",
         p = Polynomial::from_coefficients(
             vec![
                 (Monomial::from_variable(0, 0), 1),
@@ -29,8 +29,11 @@ fn main() {
     let y = Polynomial::from_variable(1);
     let left = 2 * &x * &y + 1;
     let right = 2 * &x + 2 * &y;
-    println!(
-        "print proof:\n{}",
-        search_proof(&left.into(), &right.into()).unwrap()
-    )
+    let proof = search_proof(&left.into(), &right.into());
+    let proof = proof.expect("proof should be found");
+
+    println!("print proof:\n{}", proof);
+    let proof_correct = proof.check();
+    println!("proof is correct: {}", proof_correct);
+    assert!(proof_correct);
 }
