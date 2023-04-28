@@ -1,3 +1,4 @@
+mod disequality;
 mod multiset;
 mod polynomial;
 mod proof;

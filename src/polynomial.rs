@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Mul},
 };
 
-use crate::{multiset::Multiset, Term};
+use crate::{disequality::PolynomialDisequality, multiset::Multiset, Term};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Monomial(Multiset<u32>);
@@ -110,7 +110,8 @@ impl Polynomial {
     }
 
     pub fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
-        let (left, right) = reduce(self.clone(), other.clone());
+        let PolynomialDisequality { left, right } =
+            PolynomialDisequality::from_polynomials_reduced(self.clone(), other.clone());
 
         for m_1 in left.0.support() {
             if right.0.support().all(|m_2| !m_1.strictly_divides(m_2)) {
@@ -137,19 +138,15 @@ impl Polynomial {
     }
 }
 
-pub fn reduce(left: Polynomial, right: Polynomial) -> (Polynomial, Polynomial) {
-    let left_reduced_monomials = left.0.clone().subtract(right.0.clone());
-    let right_reduced_monomials = right.0.subtract(left.0);
-
-    (
-        Polynomial(left_reduced_monomials),
-        Polynomial(right_reduced_monomials),
-    )
-}
-
 impl From<Polynomial> for Multiset<Monomial> {
     fn from(p: Polynomial) -> Self {
         p.0
+    }
+}
+
+impl From<Multiset<Monomial>> for Polynomial {
+    fn from(monomials: Multiset<Monomial>) -> Self {
+        Self(monomials)
     }
 }
 

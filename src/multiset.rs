@@ -111,6 +111,15 @@ where
     }
 }
 
+impl<T> Default for Multiset<T>
+where
+    T: Eq + Hash,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Multiset<T>
 where
     T: Eq + Hash + Clone,

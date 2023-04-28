@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
+    disequality::{PolynomialDisequality, TermDisequality},
     multiset::Multiset,
-    polynomial::{reduce, Monomial, Polynomial},
+    polynomial::{Monomial, Polynomial},
     proof::Proof,
     substitution::{compose_substitutions, Substitution},
     term::Term,
@@ -19,7 +20,10 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     let left_poly = Polynomial::from(left.clone());
     let right_poly = Polynomial::from(right.clone());
 
-    let (left_poly, right_poly) = reduce(left_poly, right_poly);
+    let PolynomialDisequality {
+        left: left_poly,
+        right: right_poly,
+    } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
 
     if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
         return None;
@@ -28,7 +32,7 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     if left_poly == 0.into() {
         if right_poly.coefficient(&Monomial::one()) > 0 {
             return Some(Proof::SuccessorNonZero {
-                conclusion: (left_poly.into(), right_poly.clone().into()),
+                conclusion: TermDisequality::from_terms(left_poly, right_poly.clone()),
                 term: right_poly.predecessor().into(),
             });
         }
@@ -36,7 +40,7 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
     } else if right_poly == 0.into() {
         if left_poly.coefficient(&Monomial::one()) > 0 {
             return Some(Proof::SuccessorNonZero {
-                conclusion: (left_poly.clone().into(), right_poly.into()),
+                conclusion: TermDisequality::from_terms(left_poly.clone(), right_poly),
                 term: left_poly.predecessor().into(),
             });
         }
@@ -60,7 +64,7 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
 
     Some(
         proof_with_holes_to_proof(
-            (left.clone(), right.clone()),
+            TermDisequality::from_terms(left.clone(), right.clone()),
             &proof_structure,
             &proofs,
             &Substitution::new(),
@@ -70,7 +74,7 @@ pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
 }
 
 fn proof_with_holes_to_proof(
-    conclusion: (Term, Term),
+    conclusion: TermDisequality,
     proof_structure: &ProofWithHoles,
     base_proofs: &Vec<(Substitution, Proof)>,
     substitution: &Substitution,
@@ -96,10 +100,7 @@ fn proof_with_holes_to_proof(
         } => {
             let zero_sub = Substitution::from_iter(vec![(*variable, Term::Zero)]);
             let zero_proof = proof_with_holes_to_proof(
-                (
-                    conclusion.0.substitute(&zero_sub),
-                    conclusion.1.substitute(&zero_sub),
-                ),
+                conclusion.substitute(&zero_sub),
                 zero_proof,
                 base_proofs,
                 &compose_substitutions(substitution, &zero_sub),
@@ -110,10 +111,7 @@ fn proof_with_holes_to_proof(
                 Term::S(Term::Variable(*variable).into()),
             )]);
             let successor_proof = proof_with_holes_to_proof(
-                (
-                    conclusion.0.substitute(&s_sub),
-                    conclusion.1.substitute(&s_sub),
-                ),
+                conclusion.substitute(&s_sub),
                 successor_proof,
                 base_proofs,
                 &compose_substitutions(substitution, &s_sub),
