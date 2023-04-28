@@ -75,6 +75,10 @@ where
         self.elements.iter()
     }
 
+    pub fn into_amount_iter(self) -> impl Iterator<Item = (T, u32)> {
+        self.elements.into_iter()
+    }
+
     pub fn is_multisubset_of(&self, other: &Multiset<T>) -> bool {
         for e in self.support() {
             if self.amount(e) > other.amount(e) {
@@ -120,6 +124,14 @@ where
         }
 
         result
+    }
+
+    pub fn into_monomials_iter(self) -> impl Iterator<Item = T> {
+        let mut elements = vec![];
+        for (element, amount) in self.into_amount_iter() {
+            elements.extend(std::iter::repeat(element).take(amount.try_into().unwrap()));
+        }
+        elements.into_iter()
     }
 }
 

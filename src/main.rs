@@ -61,8 +61,8 @@ impl Monomial {
         Self(Multiset::from_iter(vec![(v, exponent)]))
     }
 
-    fn variables(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
-        self.0.amount_iter().map(|(&v, &n)| (v, n))
+    fn into_variables_iter(self) -> impl Iterator<Item = u32> {
+        self.0.into_monomials_iter()
     }
 
     fn strictly_divides(&self, other: &Monomial) -> bool {
@@ -117,6 +117,12 @@ impl Ord for Monomial {
     }
 }
 
+impl From<Monomial> for Multiset<u32> {
+    fn from(m: Monomial) -> Self {
+        m.0
+    }
+}
+
 #[test]
 fn monomial_order() {
     let x = Monomial::from_variable(0, 1);
@@ -162,8 +168,15 @@ impl Polynomial {
 
     fn predecessor(&self) -> Polynomial {
         let mut polynomial = self.clone();
-        polynomial.0.amount_mut(Monomial::one()).saturating_sub(1);
+        let constant_coefficient = polynomial.0.amount_mut(Monomial::one());
+        *constant_coefficient = constant_coefficient.saturating_sub(1);
         polynomial
+    }
+}
+
+impl From<Polynomial> for Multiset<Monomial> {
+    fn from(p: Polynomial) -> Self {
+        p.0
     }
 }
 
@@ -263,26 +276,21 @@ impl From<u32> for Polynomial {
 
 impl From<Monomial> for Term {
     fn from(monomial: Monomial) -> Self {
-        let mut factors = vec![];
-        for (v, n) in monomial.variables() {
-            for i in 0..n {
-                factors.push(Term::Variable(v));
-            }
-        }
-
-        Self::product_of_terms(factors)
+        let mut factors: Vec<u32> = monomial.into_variables_iter().collect();
+        factors.sort();
+        let variable_terms = factors.into_iter().map(Term::Variable).collect();
+        Self::product_of_terms(variable_terms)
     }
 }
 
 impl From<Polynomial> for Term {
     fn from(p: Polynomial) -> Self {
         let mut summands = vec![];
-        let mut monomials: Vec<&Monomial> = p.0.support().collect();
+        let monomials: Multiset<Monomial> = p.into();
+        let mut monomials: Vec<Monomial> = monomials.into_monomials_iter().collect();
         monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
         for monomial in monomials {
-            for _ in 0..p.0.amount(monomial) {
-                summands.push(monomial.clone().into())
-            }
+            summands.push(monomial.clone().into())
         }
 
         Self::sum_of_terms(summands)
@@ -307,14 +315,6 @@ impl Term {
             first.clone().into(),
             Self::product_of_terms(rest.into()).into(),
         )
-    }
-
-    fn monomial(degree: u32) -> Self {
-        if degree == 0 {
-            return Self::S(Self::Zero.into());
-        }
-
-        Self::Mul(Self::Variable(0).into(), Self::monomial(degree - 1).into())
     }
 
     fn substitute(&self, substitution: &HashMap<u32, Term>) -> Self {
