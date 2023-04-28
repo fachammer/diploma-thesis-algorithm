@@ -89,10 +89,17 @@ where
         true
     }
 
+    #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         let mut elements = vec![];
         for (element, amount) in self.amount_iter() {
-            elements.extend(std::iter::repeat(element).take((*amount).try_into().unwrap()));
+            elements.extend(
+                std::iter::repeat(element).take(
+                    (*amount)
+                        .try_into()
+                        .expect("target pointer width must be at least 32-bit"),
+                ),
+            );
         }
         elements.into_iter()
     }
@@ -126,10 +133,17 @@ where
         result
     }
 
+    #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
     pub fn into_monomials_iter(self) -> impl Iterator<Item = T> {
         let mut elements = vec![];
         for (element, amount) in self.into_amount_iter() {
-            elements.extend(std::iter::repeat(element).take(amount.try_into().unwrap()));
+            elements.extend(
+                std::iter::repeat(element).take(
+                    amount
+                        .try_into()
+                        .expect("target pointer width must be at least 32-bit"),
+                ),
+            );
         }
         elements.into_iter()
     }
