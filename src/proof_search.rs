@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    compose_substitutions,
     multiset::Multiset,
     polynomial::{reduce, Monomial, Polynomial},
     proof::Proof,
+    substitution::{compose_substitutions, Substitution},
     term::Term,
-    Substitution,
 };
 
 pub fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {

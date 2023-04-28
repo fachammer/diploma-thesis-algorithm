@@ -2,27 +2,15 @@ mod multiset;
 mod polynomial;
 mod proof;
 mod proof_search;
+mod substitution;
 mod term;
 
-use std::{collections::HashMap, vec};
+use std::vec;
 
 use polynomial::{Monomial, Polynomial};
 use term::Term;
 
 use crate::proof_search::search_proof;
-
-pub type Substitution = HashMap<u32, Term>;
-
-pub fn compose_substitutions(left: &Substitution, right: &Substitution) -> Substitution {
-    let mut substitution = left.clone();
-    for (v, t) in right.iter() {
-        substitution
-            .entry(*v)
-            .and_modify(|term| *term = term.substitute(right))
-            .or_insert_with(|| t.clone());
-    }
-    substitution
-}
 
 fn main() {
     println!(
