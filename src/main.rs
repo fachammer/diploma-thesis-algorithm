@@ -1,73 +1,12 @@
 mod multiset;
 mod polynomial;
+mod term;
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-    vec,
-};
+use std::{collections::HashMap, fmt::Display, vec};
 
 use multiset::Multiset;
 use polynomial::{reduce, Monomial, Polynomial};
-
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Term {
-    Variable(u32),
-    Zero,
-    S(Box<Term>),
-    Add(Box<Term>, Box<Term>),
-    Mul(Box<Term>, Box<Term>),
-}
-
-impl Term {
-    fn free_variables(&self) -> HashSet<u32> {
-        match self {
-            Term::Variable(v) => HashSet::from_iter(vec![*v]),
-            Term::Zero => HashSet::new(),
-            Term::S(t) => t.free_variables(),
-            Term::Add(t, u) | Term::Mul(t, u) => t
-                .free_variables()
-                .union(&u.free_variables())
-                .cloned()
-                .collect(),
-        }
-    }
-
-    fn sum_of_terms(terms: Vec<Self>) -> Self {
-        let Some((first, rest)) = terms.split_first() else {
-            return Self::Zero;
-        };
-
-        Self::Add(first.clone().into(), Self::sum_of_terms(rest.into()).into())
-    }
-
-    fn product_of_terms(terms: Vec<Self>) -> Self {
-        let Some((first, rest)) = terms.split_first() else {
-            return Self::S(Self::Zero.into());
-        };
-
-        Self::Mul(
-            first.clone().into(),
-            Self::product_of_terms(rest.into()).into(),
-        )
-    }
-
-    fn substitute(&self, substitution: &HashMap<u32, Term>) -> Self {
-        match self {
-            Term::Variable(v) => substitution.get(v).cloned().unwrap_or(Term::Variable(*v)),
-            Term::Zero => Term::Zero,
-            Term::S(t) => Term::S(t.substitute(substitution).into()),
-            Term::Add(t, u) => Term::Add(
-                t.substitute(substitution).into(),
-                u.substitute(substitution).into(),
-            ),
-            Term::Mul(t, u) => Term::Mul(
-                t.substitute(substitution).into(),
-                u.substitute(substitution).into(),
-            ),
-        }
-    }
-}
+use term::Term;
 
 impl From<Term> for Polynomial {
     fn from(t: Term) -> Self {
@@ -471,12 +410,6 @@ impl Display for Proof {
             indentation: 0,
         }
         .fmt(f)
-    }
-}
-
-impl Display for Term {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Polynomial::from(self.clone()).fmt(f)
     }
 }
 
