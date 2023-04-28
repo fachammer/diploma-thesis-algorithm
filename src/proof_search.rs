@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use crate::{
     compose_substitutions,
+    multiset::Multiset,
     polynomial::{reduce, Monomial, Polynomial},
     proof::Proof,
     term::Term,
     Substitution,
 };
 
-fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {
+pub fn is_negated_equality_provable_in_AB(left: &Term, right: &Term) -> bool {
     search_proof(left, right).is_some()
 }
 
@@ -149,7 +150,7 @@ fn substitutions(
         ProofWithHoles::Split {
             variable,
             zero_proof: Box::new(proof.clone()),
-            successor_proof: Box::new(proof.clone()),
+            successor_proof: Box::new(proof),
         },
         output,
     )
@@ -163,6 +164,41 @@ enum ProofWithHoles {
         zero_proof: Box<ProofWithHoles>,
         successor_proof: Box<ProofWithHoles>,
     },
+}
+
+impl From<Term> for Polynomial {
+    fn from(t: Term) -> Self {
+        match t {
+            Term::Variable(v) => Polynomial::from_variable(v),
+            Term::Zero => 0.into(),
+            Term::S(u) => Polynomial::from(*u) + 1,
+            Term::Add(u, v) => Polynomial::from(*u) + Polynomial::from(*v),
+            Term::Mul(u, v) => Polynomial::from(*u) * Polynomial::from(*v),
+        }
+    }
+}
+
+impl From<Monomial> for Term {
+    fn from(monomial: Monomial) -> Self {
+        let mut factors: Vec<u32> = monomial.into_variables_iter().collect();
+        factors.sort();
+        let variable_terms = factors.into_iter().map(Term::Variable).collect();
+        Self::product_of_terms(variable_terms)
+    }
+}
+
+impl From<Polynomial> for Term {
+    fn from(p: Polynomial) -> Self {
+        let mut summands = vec![];
+        let monomials: Multiset<Monomial> = p.into();
+        let mut monomials: Vec<Monomial> = monomials.into_monomials_iter().collect();
+        monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
+        for monomial in monomials {
+            summands.push(monomial.clone().into())
+        }
+
+        Self::sum_of_terms(summands)
+    }
 }
 
 #[cfg(test)]
