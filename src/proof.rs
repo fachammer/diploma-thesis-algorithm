@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
-use crate::{disequality::TermDisequality, term::Term};
+use crate::{disequality::TermDisequality, substitution::Substitution, term::Term};
 
 #[derive(Clone, Debug)]
 pub enum Proof {
@@ -41,10 +41,10 @@ impl Proof {
                 let zero_conclusion = zero_proof.conclusion();
                 let successor_conclusion = successor_proof.conclusion();
 
-                let zero_sub = HashMap::from_iter(vec![(*variable, Term::Zero)]);
+                let zero_sub = Substitution::from_iter(vec![(*variable, Term::Zero)]);
                 let conclusion_at_zero = conclusion.substitute(&zero_sub);
 
-                let s_sub = HashMap::from_iter(vec![(
+                let s_sub = Substitution::from_iter(vec![(
                     *variable,
                     Term::S(Term::Variable(*variable).into()),
                 )]);

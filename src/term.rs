@@ -1,9 +1,6 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-};
+use std::{collections::HashSet, fmt::Display};
 
-use crate::polynomial::Polynomial;
+use crate::{polynomial::Polynomial, substitution::Substitution};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Term {
@@ -47,7 +44,7 @@ impl Term {
         )
     }
 
-    pub fn substitute(&self, substitution: &HashMap<u32, Term>) -> Self {
+    pub fn substitute(&self, substitution: &Substitution) -> Self {
         match self {
             Term::Variable(v) => substitution.get(v).cloned().unwrap_or(Term::Variable(*v)),
             Term::Zero => Term::Zero,

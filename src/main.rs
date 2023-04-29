@@ -6,25 +6,14 @@ mod proof_search;
 mod substitution;
 mod term;
 
-use std::vec;
-
-use polynomial::{Monomial, Polynomial};
+use polynomial::Polynomial;
 use term::Term;
 
 use crate::proof_search::{is_negated_equality_provable, search_proof};
 
 fn main() {
-    println!(
-        "print polynomial: {p}",
-        p = Polynomial::from_coefficients(
-            vec![
-                (Monomial::from_variable(0, 0), 1),
-                (Monomial::from_variable(0, 1), 2),
-                (Monomial::from_variable(0, 2), 3)
-            ]
-            .into_iter()
-        )
-    );
+    let x = || Polynomial::from_variable(0);
+    println!("print polynomial: {}", 3 * x() * x() + 2 * x() + 1);
 
     let x = || Polynomial::from_variable(0);
     let y = || Polynomial::from_variable(1);

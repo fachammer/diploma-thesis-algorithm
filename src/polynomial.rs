@@ -1,10 +1,11 @@
 use std::{
-    collections::HashMap,
     fmt::Display,
     ops::{Add, Mul},
 };
 
-use crate::{disequality::PolynomialDisequality, multiset::Multiset, Term};
+use crate::{
+    disequality::PolynomialDisequality, multiset::Multiset, substitution::Substitution, Term,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Monomial(Multiset<u32>);
@@ -105,7 +106,7 @@ impl Polynomial {
         self.0.amount(monomial)
     }
 
-    pub fn at_substitution(&self, substitution: &HashMap<u32, Term>) -> Term {
+    pub fn at_substitution(&self, substitution: &Substitution) -> Term {
         Term::from(self.clone()).substitute(substitution)
     }
 

@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-
 use crate::{
     disequality::{PolynomialDisequality, TermDisequality},
     multiset::Multiset,
     polynomial::{Monomial, Polynomial},
     proof::Proof,
-    substitution::{compose_substitutions, Substitution},
+    substitution::Substitution,
     term::Term,
 };
 
@@ -101,7 +99,7 @@ fn proof_with_holes_to_proof(
                 conclusion.substitute(&zero_sub),
                 zero_proof,
                 base_proofs,
-                &compose_substitutions(substitution, &zero_sub),
+                &substitution.clone().compose(zero_sub),
             )?;
 
             let s_sub = Substitution::from_iter(vec![(
@@ -112,7 +110,7 @@ fn proof_with_holes_to_proof(
                 conclusion.substitute(&s_sub),
                 successor_proof,
                 base_proofs,
-                &compose_substitutions(substitution, &s_sub),
+                &substitution.clone().compose(s_sub),
             )?;
             Ok(Proof::Split {
                 conclusion,
@@ -126,18 +124,20 @@ fn proof_with_holes_to_proof(
 
 fn split_substitutions(
     mut variables: impl Iterator<Item = u32>,
-) -> (ProofWithHoles, Vec<HashMap<u32, Term>>) {
-    let Some(variable) = variables.next() else {return (ProofWithHoles::Hole,vec![Substitution::new()]);};
+) -> (ProofWithHoles, Vec<Substitution>) {
+    let Some(variable) = variables.next() else {
+        return (ProofWithHoles::Hole, vec![Substitution::new()]);
+    };
 
     let (proof, subs) = split_substitutions(variables);
     let mut output = Vec::new();
 
     for sub in subs {
         let mut zero_sub = sub.clone();
-        zero_sub.insert(variable, Term::Zero);
+        zero_sub.extend(vec![(variable, Term::Zero)]);
         output.push(zero_sub);
         let mut s_sub = sub;
-        s_sub.insert(variable, Term::S(Term::Variable(variable).into()));
+        s_sub.extend(vec![(variable, Term::S(Term::Variable(variable).into()))]);
         output.push(s_sub);
     }
 
@@ -245,12 +245,23 @@ mod test {
     }
 
     #[test]
-    fn test_substitutions() {
+    fn split_substitutions_with_two_variables() {
         assert_eq!(
-            split_substitutions(vec![0].into_iter()).1,
+            split_substitutions(vec![0, 1].into_iter()).1,
             (vec![
-                HashMap::from_iter(vec![(0, Term::Zero)]),
-                HashMap::from_iter(vec![(0, Term::S(Term::Variable(0).into()))])
+                Substitution::from_iter(vec![(0, Term::Zero), (1, Term::Zero)]),
+                Substitution::from_iter(vec![
+                    (0, Term::S(Term::Variable(0).into())),
+                    (1, Term::Zero)
+                ]),
+                Substitution::from_iter(vec![
+                    (0, Term::Zero),
+                    (1, Term::S(Term::Variable(1).into()))
+                ]),
+                Substitution::from_iter(vec![
+                    (0, Term::S(Term::Variable(0).into())),
+                    (1, Term::S(Term::Variable(1).into()))
+                ]),
             ])
         );
     }
