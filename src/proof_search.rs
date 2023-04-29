@@ -198,7 +198,11 @@ impl From<Polynomial> for Term {
 
 #[cfg(test)]
 mod test {
-    use proptest::{prelude::prop, prop_compose, proptest};
+    use proptest::{
+        prelude::prop,
+        prop_compose, prop_oneof, proptest,
+        strategy::{Just, Strategy},
+    };
 
     use crate::{polynomial::Polynomial, term::Term};
 
@@ -280,10 +284,26 @@ mod test {
         }
     }
 
+    fn term(depth: u32, desired_size: u32) -> impl Strategy<Value = Term> {
+        let leaf = prop_oneof![Just(Term::Zero), (0u32..5).prop_map(Term::Variable),];
+        leaf.prop_recursive(depth, desired_size, 2, |inner| {
+            prop_oneof![
+                inner.clone().prop_map(|t| Term::S(t.into())),
+                (inner.clone(), inner.clone()).prop_map(|(t, u)| Term::Add(t.into(), u.into())),
+                (inner.clone(), inner).prop_map(|(t, u)| Term::Mul(t.into(), u.into())),
+            ]
+        })
+    }
+
     proptest! {
         #[test]
         fn polynomial_to_term_and_back(p in polynomial(10, 5, 10, 10)) {
             assert_eq!(Polynomial::from(Term::from(p.clone())), p);
+        }
+
+        #[test]
+        fn proof_search_does_not_crash(left in term(100, 200), right in term(100, 200)) {
+            search_proof(&left, &right);
         }
     }
 }
