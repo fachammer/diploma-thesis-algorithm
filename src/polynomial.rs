@@ -19,6 +19,10 @@ impl Monomial {
         Self(Multiset::from_iter(vec![(v, exponent)]))
     }
 
+    pub fn from_exponents<T: IntoIterator<Item = (u32, u32)>>(exponents: T) -> Self {
+        Self(Multiset::from_iter(exponents))
+    }
+
     pub fn into_variables_iter(self) -> impl Iterator<Item = u32> {
         self.0.into_iter()
     }
@@ -98,7 +102,7 @@ impl Polynomial {
         )]))
     }
 
-    pub fn from_coefficients(coefficients: impl Iterator<Item = (Monomial, u32)>) -> Self {
+    pub fn from_coefficients<T: IntoIterator<Item = (Monomial, u32)>>(coefficients: T) -> Self {
         Self(Multiset::from_iter(coefficients))
     }
 

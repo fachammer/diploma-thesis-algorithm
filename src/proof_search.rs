@@ -198,6 +198,8 @@ impl From<Polynomial> for Term {
 
 #[cfg(test)]
 mod test {
+    use proptest::{prelude::prop, prop_compose, proptest};
+
     use crate::{polynomial::Polynomial, term::Term};
 
     use super::*;
@@ -264,5 +266,24 @@ mod test {
                 ]),
             ])
         );
+    }
+
+    prop_compose! {
+        fn monomial(max_exponent: u32, max_factors: usize)(exponents in prop::collection::vec((0u32..100, 0..=max_exponent), 0..=max_factors)) -> Monomial {
+            Monomial::from_exponents(exponents)
+        }
+    }
+
+    prop_compose! {
+        fn polynomial(max_exponent: u32, max_factors: usize, max_coefficient: u32, max_coefficients: usize)(coefficients in prop::collection::vec((monomial(max_exponent, max_factors), 0..=max_coefficient), 0..=max_coefficients)) -> Polynomial {
+            Polynomial::from_coefficients(coefficients)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn polynomial_to_term_and_back(p in polynomial(10, 5, 10, 10)) {
+            assert_eq!(Polynomial::from(Term::from(p.clone())), p);
+        }
     }
 }
