@@ -9,7 +9,7 @@ mod term;
 use polynomial::Polynomial;
 use term::Term;
 
-use crate::proof_search::{is_negated_equality_provable, search_proof};
+use crate::proof_search::v2::{is_negated_equality_provable, search_proof};
 
 fn main() {
     let x = || Polynomial::from_variable(0);
@@ -23,10 +23,9 @@ fn main() {
         &left.clone().into(),
         &right.clone().into()
     ));
-    let proof = search_proof(&left.into(), &right.into());
-    let proof = proof.expect("proof should be found");
+    let proof = search_proof(&left.into(), &right.into()).expect("should find proof");
 
-    println!("print proof:\n{}", proof);
+    println!("print proof :\n{}", proof);
     let proof_correct = proof.check();
     println!("proof is correct: {}", proof_correct);
     assert!(proof_correct);

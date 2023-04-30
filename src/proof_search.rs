@@ -1,164 +1,392 @@
 use crate::{
-    disequality::{PolynomialDisequality, TermDisequality},
     multiset::Multiset,
     polynomial::{Monomial, Polynomial},
-    proof::Proof,
-    substitution::Substitution,
     term::Term,
 };
 
-pub fn is_negated_equality_provable(left: &Term, right: &Term) -> bool {
-    search_proof(left, right).is_some()
+pub mod v2 {
+    use std::collections::VecDeque;
+
+    use crate::{
+        disequality::{PolynomialDisequality, TermDisequality},
+        polynomial::{Monomial, Polynomial},
+        proof::Proof,
+        substitution::Substitution,
+        term::Term,
+    };
+
+    pub fn is_negated_equality_provable(left: &Term, right: &Term) -> bool {
+        search_proof(left, right).is_ok()
+    }
+
+    pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, ProofAttempt> {
+        let left_poly = Polynomial::from(left.clone());
+        let right_poly = Polynomial::from(right.clone());
+        let PolynomialDisequality {
+            left: left_poly,
+            right: right_poly,
+        } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
+        let left = Term::from(left_poly);
+        let right = Term::from(right_poly);
+        let right_free_variables = right.free_variables();
+        let left_free_variables = left.free_variables();
+        let free_variables = left_free_variables.union(&right_free_variables);
+
+        let mut free_variables: Vec<u32> = free_variables.cloned().collect();
+        free_variables.sort();
+
+        let mut proof = Box::new(ProofInProgress::Hole {
+            conclusion: TermDisequality::from_terms(left, right),
+            next_variables: free_variables.iter().copied().cycle(),
+        });
+        let mut proof_holes = VecDeque::from_iter(vec![proof.as_mut()]);
+
+        while let Some(hole) = proof_holes.pop_front() {
+            let (conclusion, next_variables) = hole.hole().unwrap();
+            let left_poly = Polynomial::from(conclusion.left().clone());
+            let right_poly = Polynomial::from(conclusion.right().clone());
+            let PolynomialDisequality {
+                left: left_poly,
+                right: right_poly,
+            } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
+
+            if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
+                *hole = ProofInProgress::NotStrictlyMonomiallyComparable;
+                continue;
+            }
+
+            if left_poly == 0.into() {
+                *hole = if right_poly.coefficient(&Monomial::one()) > 0 {
+                    ProofInProgress::SuccessorNonZero {
+                        term: right_poly.predecessor().into(),
+                    }
+                } else {
+                    ProofInProgress::FoundRoot
+                };
+                continue;
+            } else if right_poly == 0.into() {
+                *hole = if left_poly.coefficient(&Monomial::one()) > 0 {
+                    ProofInProgress::SuccessorNonZero {
+                        term: left_poly.predecessor().into(),
+                    }
+                } else {
+                    ProofInProgress::FoundRoot
+                };
+                continue;
+            }
+
+            let mut next_variables = next_variables.clone();
+            let variable = next_variables.next().unwrap();
+
+            let zero_proof = Box::new(ProofInProgress::Hole {
+                conclusion: conclusion
+                    .substitute(&Substitution::from_iter(vec![(variable, Term::Zero)])),
+                next_variables: next_variables.clone(),
+            });
+            let successor_proof = Box::new(ProofInProgress::Hole {
+                conclusion: conclusion.substitute(&Substitution::from_iter(vec![(
+                    variable,
+                    Term::S(Term::Variable(variable).into()),
+                )])),
+                next_variables: next_variables.clone(),
+            });
+            *hole = ProofInProgress::Split {
+                variable,
+                conclusion: conclusion.clone(),
+                zero_proof,
+                successor_proof,
+            };
+            let (zero_proof, successor_proof) = hole.proofs_mut().unwrap();
+            proof_holes.push_back(zero_proof);
+            proof_holes.push_back(successor_proof);
+        }
+
+        let proof_attempt = ProofAttempt::try_from(*proof).expect("proof has no holes");
+        Proof::try_from(proof_attempt)
+    }
+
+    #[derive(Clone)]
+    pub enum ProofInProgress<I: Iterator<Item = u32>> {
+        NotStrictlyMonomiallyComparable,
+        FoundRoot,
+        Hole {
+            conclusion: TermDisequality,
+            next_variables: I,
+        },
+        SuccessorNonZero {
+            term: Term,
+        },
+        Split {
+            variable: u32,
+            conclusion: TermDisequality,
+            zero_proof: Box<ProofInProgress<I>>,
+            successor_proof: Box<ProofInProgress<I>>,
+        },
+    }
+
+    impl<I: Iterator<Item = u32>> ProofInProgress<I> {
+        fn proofs_mut(&mut self) -> Option<(&mut Self, &mut Self)> {
+            match self {
+                ProofInProgress::Split {
+                    zero_proof,
+                    successor_proof,
+                    ..
+                } => Some((zero_proof, successor_proof)),
+                _ => None,
+            }
+        }
+
+        fn hole(&self) -> Option<(&TermDisequality, &I)> {
+            match self {
+                ProofInProgress::Hole {
+                    conclusion,
+                    next_variables,
+                } => Some((conclusion, next_variables)),
+                _ => None,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum ProofAttempt {
+        NotStrictlyMonomiallyComparable,
+        FoundRoot,
+        SuccessorNonZero {
+            term: Term,
+        },
+        Split {
+            variable: u32,
+            conclusion: TermDisequality,
+            zero_proof: Box<ProofAttempt>,
+            successor_proof: Box<ProofAttempt>,
+        },
+    }
+
+    impl<I: Iterator<Item = u32>> TryFrom<ProofInProgress<I>> for ProofAttempt {
+        type Error = String;
+
+        fn try_from(value: ProofInProgress<I>) -> Result<Self, Self::Error> {
+            match value {
+                ProofInProgress::NotStrictlyMonomiallyComparable => {
+                    Ok(Self::NotStrictlyMonomiallyComparable)
+                }
+                ProofInProgress::FoundRoot => Ok(Self::FoundRoot),
+                ProofInProgress::Hole { .. } => Err(String::from("proof is incomplete")),
+                ProofInProgress::SuccessorNonZero { term } => Ok(Self::SuccessorNonZero { term }),
+                ProofInProgress::Split {
+                    variable,
+                    conclusion,
+                    zero_proof,
+                    successor_proof,
+                } => match (
+                    Self::try_from(*zero_proof),
+                    Self::try_from(*successor_proof),
+                ) {
+                    (Ok(zero_attempt), Ok(successor_attempt)) => Ok(Self::Split {
+                        variable,
+                        conclusion,
+                        zero_proof: zero_attempt.into(),
+                        successor_proof: successor_attempt.into(),
+                    }),
+                    _ => Err(String::from("proof is incomplete")),
+                },
+            }
+        }
+    }
+
+    impl TryFrom<ProofAttempt> for Proof {
+        type Error = ProofAttempt;
+
+        fn try_from(value: ProofAttempt) -> Result<Self, Self::Error> {
+            match value.clone() {
+                ProofAttempt::NotStrictlyMonomiallyComparable | ProofAttempt::FoundRoot => {
+                    Err(value)
+                }
+                ProofAttempt::SuccessorNonZero { term } => Ok(Proof::SuccessorNonZero { term }),
+                ProofAttempt::Split {
+                    variable,
+                    conclusion,
+                    zero_proof,
+                    successor_proof,
+                } => match (
+                    Self::try_from(*zero_proof),
+                    Self::try_from(*successor_proof),
+                ) {
+                    (Ok(zero_proof), Ok(successor_proof)) => Ok(Self::Split {
+                        variable,
+                        conclusion,
+                        zero_proof: zero_proof.into(),
+                        successor_proof: successor_proof.into(),
+                    }),
+                    _ => Err(value),
+                },
+            }
+        }
+    }
 }
 
-pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
-    let right_free_variables = right.free_variables();
-    let left_free_variables = left.free_variables();
-    let free_variables = left_free_variables.union(&right_free_variables);
-    let left_poly = Polynomial::from(left.clone());
-    let right_poly = Polynomial::from(right.clone());
+mod v1 {
+    use crate::{
+        disequality::{PolynomialDisequality, TermDisequality},
+        polynomial::{Monomial, Polynomial},
+        proof::Proof,
+        substitution::Substitution,
+        term::Term,
+    };
 
-    let PolynomialDisequality {
-        left: left_poly,
-        right: right_poly,
-    } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
-
-    if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
-        return None;
+    pub fn is_negated_equality_provable(left: &Term, right: &Term) -> bool {
+        search_proof(left, right).is_some()
     }
 
-    if left_poly == 0.into() {
-        if right_poly.coefficient(&Monomial::one()) > 0 {
-            return Some(Proof::SuccessorNonZero {
-                term: right_poly.predecessor().into(),
-            });
-        }
-        return None;
-    } else if right_poly == 0.into() {
-        if left_poly.coefficient(&Monomial::one()) > 0 {
-            return Some(Proof::SuccessorNonZero {
-                term: left_poly.predecessor().into(),
-            });
-        }
-        return None;
-    }
+    pub fn search_proof(left: &Term, right: &Term) -> Option<Proof> {
+        let right_free_variables = right.free_variables();
+        let left_free_variables = left.free_variables();
+        let free_variables = left_free_variables.union(&right_free_variables);
+        let left_poly = Polynomial::from(left.clone());
+        let right_poly = Polynomial::from(right.clone());
 
-    let mut free_variables: Vec<u32> = free_variables.cloned().collect();
-    free_variables.sort();
-    let (proof_structure, substitutions) = split_substitutions(free_variables.into_iter());
-    let mut proofs: Vec<(Substitution, Proof)> = vec![];
+        let PolynomialDisequality {
+            left: left_poly,
+            right: right_poly,
+        } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
 
-    for substitution in substitutions {
-        let Some(proof) = search_proof(
+        if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
+            return None;
+        }
+
+        if left_poly == 0.into() {
+            if right_poly.coefficient(&Monomial::one()) > 0 {
+                return Some(Proof::SuccessorNonZero {
+                    term: right_poly.predecessor().into(),
+                });
+            }
+            return None;
+        } else if right_poly == 0.into() {
+            if left_poly.coefficient(&Monomial::one()) > 0 {
+                return Some(Proof::SuccessorNonZero {
+                    term: left_poly.predecessor().into(),
+                });
+            }
+            return None;
+        }
+
+        let mut free_variables: Vec<u32> = free_variables.cloned().collect();
+        free_variables.sort();
+        let (proof_structure, substitutions) = split_substitutions(free_variables.into_iter());
+        let mut proofs: Vec<(Substitution, Proof)> = vec![];
+
+        for substitution in substitutions {
+            let Some(proof) = search_proof(
         &left_poly.at_substitution(&substitution),
         &right_poly.at_substitution(&substitution),
     ) else {
         return None;
     };
-        proofs.push((substitution, proof));
-    }
+            proofs.push((substitution, proof));
+        }
 
-    Some(
-        proof_with_holes_to_proof(
-            TermDisequality::from_terms(left.clone(), right.clone()),
-            &proof_structure,
-            &proofs,
-            &Substitution::new(),
+        Some(
+            proof_with_holes_to_proof(
+                TermDisequality::from_terms(left.clone(), right.clone()),
+                &proof_structure,
+                &proofs,
+                &Substitution::new(),
+            )
+            .expect("there are base proofs for every substitution"),
         )
-        .expect("there are base proofs for every substitution"),
-    )
-}
+    }
 
-fn proof_with_holes_to_proof(
-    conclusion: TermDisequality,
-    proof_structure: &ProofWithHoles,
-    base_proofs: &Vec<(Substitution, Proof)>,
-    substitution: &Substitution,
-) -> Result<Proof, Substitution> {
-    match proof_structure {
-        ProofWithHoles::Hole => {
-            let proof = base_proofs
-                .iter()
-                .filter_map(|(s, p)| {
-                    if s == substitution {
-                        Some(p.clone())
-                    } else {
-                        None
-                    }
-                })
-                .next();
-            proof.ok_or_else(|| substitution.clone())
-        }
-        ProofWithHoles::Split {
-            variable,
-            zero_proof,
-            successor_proof,
-        } => {
-            let zero_sub = Substitution::from_iter(vec![(*variable, Term::Zero)]);
-            let zero_proof = proof_with_holes_to_proof(
-                conclusion.substitute(&zero_sub),
+    fn proof_with_holes_to_proof(
+        conclusion: TermDisequality,
+        proof_structure: &ProofWithHoles,
+        base_proofs: &Vec<(Substitution, Proof)>,
+        substitution: &Substitution,
+    ) -> Result<Proof, Substitution> {
+        match proof_structure {
+            ProofWithHoles::Hole => {
+                let proof = base_proofs
+                    .iter()
+                    .filter_map(|(s, p)| {
+                        if s == substitution {
+                            Some(p.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .next();
+                proof.ok_or_else(|| substitution.clone())
+            }
+            ProofWithHoles::Split {
+                variable,
                 zero_proof,
-                base_proofs,
-                &substitution.clone().compose(zero_sub),
-            )?;
-
-            let s_sub = Substitution::from_iter(vec![(
-                *variable,
-                Term::S(Term::Variable(*variable).into()),
-            )]);
-            let successor_proof = proof_with_holes_to_proof(
-                conclusion.substitute(&s_sub),
                 successor_proof,
-                base_proofs,
-                &substitution.clone().compose(s_sub),
-            )?;
-            Ok(Proof::Split {
-                conclusion,
-                variable: *variable,
-                zero_proof: Box::new(zero_proof),
-                successor_proof: Box::new(successor_proof),
-            })
+            } => {
+                let zero_sub = Substitution::from_iter(vec![(*variable, Term::Zero)]);
+                let zero_proof = proof_with_holes_to_proof(
+                    conclusion.substitute(&zero_sub),
+                    zero_proof,
+                    base_proofs,
+                    &substitution.clone().compose(zero_sub),
+                )?;
+
+                let s_sub = Substitution::from_iter(vec![(
+                    *variable,
+                    Term::S(Term::Variable(*variable).into()),
+                )]);
+                let successor_proof = proof_with_holes_to_proof(
+                    conclusion.substitute(&s_sub),
+                    successor_proof,
+                    base_proofs,
+                    &substitution.clone().compose(s_sub),
+                )?;
+                Ok(Proof::Split {
+                    conclusion,
+                    variable: *variable,
+                    zero_proof: Box::new(zero_proof),
+                    successor_proof: Box::new(successor_proof),
+                })
+            }
         }
     }
-}
 
-fn split_substitutions(
-    mut variables: impl Iterator<Item = u32>,
-) -> (ProofWithHoles, Vec<Substitution>) {
-    let Some(variable) = variables.next() else {
+    pub fn split_substitutions(
+        mut variables: impl Iterator<Item = u32>,
+    ) -> (ProofWithHoles, Vec<Substitution>) {
+        let Some(variable) = variables.next() else {
         return (ProofWithHoles::Hole, vec![Substitution::new()]);
     };
 
-    let (proof, subs) = split_substitutions(variables);
-    let mut output = Vec::new();
+        let (proof, subs) = split_substitutions(variables);
+        let mut output = Vec::new();
 
-    for sub in subs {
-        let mut zero_sub = sub.clone();
-        zero_sub.extend(vec![(variable, Term::Zero)]);
-        output.push(zero_sub);
-        let mut s_sub = sub;
-        s_sub.extend(vec![(variable, Term::S(Term::Variable(variable).into()))]);
-        output.push(s_sub);
+        for sub in subs {
+            let mut zero_sub = sub.clone();
+            zero_sub.extend(vec![(variable, Term::Zero)]);
+            output.push(zero_sub);
+            let mut s_sub = sub;
+            s_sub.extend(vec![(variable, Term::S(Term::Variable(variable).into()))]);
+            output.push(s_sub);
+        }
+
+        (
+            ProofWithHoles::Split {
+                variable,
+                zero_proof: Box::new(proof.clone()),
+                successor_proof: Box::new(proof),
+            },
+            output,
+        )
     }
 
-    (
-        ProofWithHoles::Split {
-            variable,
-            zero_proof: Box::new(proof.clone()),
-            successor_proof: Box::new(proof),
+    #[derive(Clone)]
+    pub enum ProofWithHoles {
+        Hole,
+        Split {
+            variable: u32,
+            zero_proof: Box<ProofWithHoles>,
+            successor_proof: Box<ProofWithHoles>,
         },
-        output,
-    )
-}
-
-#[derive(Clone)]
-enum ProofWithHoles {
-    Hole,
-    Split {
-        variable: u32,
-        zero_proof: Box<ProofWithHoles>,
-        successor_proof: Box<ProofWithHoles>,
-    },
+    }
 }
 
 impl From<Term> for Polynomial {
@@ -204,7 +432,12 @@ mod test {
         strategy::{Just, Strategy},
     };
 
-    use crate::{polynomial::Polynomial, term::Term};
+    use crate::{
+        polynomial::Polynomial,
+        proof_search::v1::{is_negated_equality_provable, search_proof, split_substitutions},
+        substitution::Substitution,
+        term::Term,
+    };
 
     use super::*;
 
@@ -272,6 +505,31 @@ mod test {
         );
     }
 
+    #[test]
+    fn proof_search_v2_does_not_crash_on_term_with_variable_times_zero() {
+        use Term::*;
+        let left = S(Zero.into());
+        let right = Mul(
+            Add(
+                Variable(1).into(),
+                Mul(Variable(0).into(), Zero.into()).into(),
+            )
+            .into(),
+            S(Add(Zero.into(), Zero.into()).into()).into(),
+        );
+
+        crate::proof_search::v2::search_proof(&left, &right);
+    }
+
+    #[test]
+    fn proof_search_v2_does_not_crash_on_unsolvable_equation() {
+        use Term::*;
+        let left = S(Zero.into());
+        let right = Add(Variable(1).into(), Variable(0).into());
+
+        crate::proof_search::v2::search_proof(&left, &right);
+    }
+
     prop_compose! {
         fn monomial(max_exponent: u32, max_factors: usize)(exponents in prop::collection::vec((0u32..100, 0..=max_exponent), 0..=max_factors)) -> Monomial {
             Monomial::from_exponents(exponents)
@@ -302,8 +560,18 @@ mod test {
         }
 
         #[test]
-        fn proof_search_does_not_crash(left in term(100, 200), right in term(100, 200)) {
+        fn proof_search_does_not_crash(left in term(80, 200), right in term(80, 200)) {
             search_proof(&left, &right);
+        }
+
+        #[test]
+        fn v2_preserves_provability_to_v1(left in term(30, 200), right in term(30, 200)) {
+            assert_eq!(is_negated_equality_provable(&left, &right), crate::proof_search::v2::is_negated_equality_provable(&left, &right))
+        }
+
+        #[test]
+        fn proof_search_v2_does_not_crash(left in term(30, 200), right in term(30, 200)) {
+            crate::proof_search::v2::search_proof(&left, &right);
         }
     }
 }

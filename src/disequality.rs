@@ -49,6 +49,14 @@ impl TermDisequality {
         }
     }
 
+    pub fn left(&self) -> &Term {
+        &self.left
+    }
+
+    pub fn right(&self) -> &Term {
+        &self.right
+    }
+
     pub fn is_equivalent_to(&self, other: &Self) -> bool {
         PolynomialDisequality::from(self.clone())
             .is_equivalent_to(&PolynomialDisequality::from(other.clone()))
