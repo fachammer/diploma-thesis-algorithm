@@ -38,14 +38,9 @@ where
     T: Eq + Hash + Ord,
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let mut support: Vec<&T> = self.support().collect();
+        let mut support: Vec<(&T, &u32)> = self.amount_iter().collect();
         support.sort();
-        let hashable: Vec<(&T, u32)> = support
-            .into_iter()
-            .filter(|e| self.amount(e) > 0)
-            .map(|e| (e, self.amount(e)))
-            .collect();
-        hashable.hash(state)
+        support.hash(state)
     }
 }
 
@@ -74,7 +69,7 @@ where
     }
 
     pub fn amount_iter(&self) -> impl Iterator<Item = (&T, &u32)> {
-        self.elements.iter()
+        self.elements.iter().filter(|(_, v)| **v > 0)
     }
 
     pub fn amount_iter_mut(&mut self) -> impl Iterator<Item = (&T, &mut u32)> {
