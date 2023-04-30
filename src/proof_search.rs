@@ -429,7 +429,8 @@ mod test {
     use proptest::{
         prelude::prop,
         prop_compose, prop_oneof, proptest,
-        strategy::{Just, Strategy},
+        strategy::{BoxedStrategy, Just, Strategy, ValueTree},
+        test_runner::{Config, TestRunner},
     };
 
     use crate::{
@@ -542,7 +543,7 @@ mod test {
         }
     }
 
-    fn term(depth: u32, desired_size: u32) -> impl Strategy<Value = Term> {
+    fn term(depth: u32, desired_size: u32) -> BoxedStrategy<Term> {
         let leaf = prop_oneof![Just(Term::Zero), (0u32..5).prop_map(Term::Variable),];
         leaf.prop_recursive(depth, desired_size, 2, |inner| {
             prop_oneof![
@@ -551,6 +552,21 @@ mod test {
                 (inner.clone(), inner).prop_map(|(t, u)| Term::Mul(t.into(), u.into())),
             ]
         })
+        .boxed()
+    }
+
+    #[test]
+    fn performance_test() {
+        let mut runner = TestRunner::deterministic();
+        let left = term(20, 400);
+        let right = term(20, 400);
+
+        runner
+            .run(&(left, right), |(left, right)| {
+                crate::proof_search::v2::search_proof(&left, &right);
+                Ok(())
+            })
+            .unwrap();
     }
 
     proptest! {
