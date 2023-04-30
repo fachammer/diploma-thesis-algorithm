@@ -148,14 +148,14 @@ where
     }
 }
 
-impl<T> Extend<T> for Multiset<T>
+impl<T> Extend<(T, u32)> for Multiset<T>
 where
     T: Eq + Hash,
 {
-    fn extend<U: IntoIterator<Item = T>>(&mut self, iter: U) {
-        for element in iter {
+    fn extend<U: IntoIterator<Item = (T, u32)>>(&mut self, iter: U) {
+        for (element, amount) in iter {
             let value = self.elements.entry(element).or_insert(0);
-            *value += 1;
+            *value += amount;
         }
     }
 }
@@ -168,7 +168,7 @@ mod test {
     fn multiset_extend() {
         let mut left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
         let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
-        left.extend(right.into_iter());
+        left.extend(right.into_amount_iter());
 
         assert_eq!(left, Multiset::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
     }

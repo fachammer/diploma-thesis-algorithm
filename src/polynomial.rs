@@ -44,7 +44,7 @@ impl Mul for Monomial {
     type Output = Monomial;
 
     fn mul(mut self, rhs: Self) -> Self::Output {
-        self.0.extend(rhs.0.into_iter());
+        self.0.extend(rhs.0.into_amount_iter());
         self
     }
 }
@@ -159,7 +159,7 @@ impl Add for Polynomial {
     type Output = Self;
 
     fn add(mut self, rhs: Self) -> Self::Output {
-        self.0.extend(rhs.0.into_iter());
+        self.0.extend(rhs.0.into_amount_iter());
         self
     }
 }
@@ -198,7 +198,7 @@ impl Mul<Polynomial> for u32 {
 
 impl From<u32> for Polynomial {
     fn from(n: u32) -> Self {
-        Polynomial(Multiset::from_iter(vec![(Monomial::one(), n)]))
+        Polynomial(Multiset::from_iter([(Monomial::one(), n)]))
     }
 }
 
