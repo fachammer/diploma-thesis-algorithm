@@ -429,8 +429,8 @@ mod test {
     use proptest::{
         prelude::prop,
         prop_compose, prop_oneof, proptest,
-        strategy::{BoxedStrategy, Just, Strategy, ValueTree},
-        test_runner::{Config, TestRunner},
+        strategy::{BoxedStrategy, Just, Strategy},
+        test_runner::TestRunner,
     };
 
     use crate::{
