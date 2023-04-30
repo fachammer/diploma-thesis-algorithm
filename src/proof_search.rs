@@ -19,7 +19,7 @@ pub mod v2 {
         search_proof(left, right).is_ok()
     }
 
-    pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, ProofAttempt> {
+    pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, String> {
         let left_poly = Polynomial::from(left.clone());
         let right_poly = Polynomial::from(right.clone());
         let PolynomialDisequality {
@@ -195,12 +195,12 @@ pub mod v2 {
     }
 
     impl TryFrom<ProofAttempt> for Proof {
-        type Error = ProofAttempt;
+        type Error = String;
 
         fn try_from(value: ProofAttempt) -> Result<Self, Self::Error> {
-            match value.clone() {
+            match value {
                 ProofAttempt::NotStrictlyMonomiallyComparable | ProofAttempt::FoundRoot => {
-                    Err(value)
+                    Err(String::from("error"))
                 }
                 ProofAttempt::SuccessorNonZero { term } => Ok(Proof::SuccessorNonZero { term }),
                 ProofAttempt::Split {
@@ -218,7 +218,7 @@ pub mod v2 {
                         zero_proof: zero_proof.into(),
                         successor_proof: successor_proof.into(),
                     }),
-                    _ => Err(value),
+                    _ => Err(String::from("error")),
                 },
             }
         }
