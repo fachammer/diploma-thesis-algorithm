@@ -25,12 +25,14 @@ impl Term {
         }
     }
 
-    pub fn sum_of_terms(terms: Vec<Self>) -> Self {
-        let Some((first, rest)) = terms.split_first() else {
-            return Self::Zero;
-        };
+    pub fn sum_of_terms(mut terms: Vec<Self>) -> Self {
+        let mut sum_term = Self::Zero;
+        terms.reverse();
+        for term in terms.into_iter() {
+            sum_term = Self::Add(term.into(), sum_term.into());
+        }
 
-        Self::Add(first.clone().into(), Self::sum_of_terms(rest.into()).into())
+        sum_term
     }
 
     pub fn product_of_terms(terms: Vec<Self>) -> Self {

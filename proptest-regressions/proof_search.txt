@@ -5,3 +5,5 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc d0eb592577e2e5a23d0c411e4aa3bcd7fe0e9d066b49f369672eb09696b9f5df # shrinks to v = 0
+cc 144eb4de3c455a1247c62d2489f72d3aaa93d6b2a942d2ee4fe1d7cfcf5d5d9e # shrinks to left = Mul(Add(Add(Add(Zero, Variable(3)), Variable(2)), Add(Variable(4), Variable(1))), Mul(S(Mul(Zero, Variable(1))), S(Mul(Add(Variable(0), Variable(0)), Zero)))), right = S(Add(S(Variable(1)), Add(S(Variable(4)), Zero)))
+cc d34504939d204fb9c72bfe48926f37ee41846f30d61cfb0c49b1c9b65a3a1391 # shrinks to left = Mul(Mul(Add(Mul(Variable(0), Variable(2)), Add(S(Zero), Variable(0))), S(S(Zero))), S(Add(Mul(Zero, Variable(3)), Mul(Zero, Variable(0))))), right = S(S(Mul(S(Zero), Mul(Mul(S(Variable(0)), Zero), Variable(1)))))

@@ -167,8 +167,9 @@ impl Add for Polynomial {
 impl Add<u32> for Polynomial {
     type Output = Polynomial;
 
-    fn add(self, rhs: u32) -> Self::Output {
-        self + Polynomial::from(rhs)
+    fn add(mut self, rhs: u32) -> Self::Output {
+        self.0.extend([(Monomial::one(), rhs)]);
+        self
     }
 }
 

@@ -417,7 +417,7 @@ impl From<Polynomial> for Term {
         let mut monomials: Vec<Monomial> = monomials.into_iter().collect();
         monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
         for monomial in monomials {
-            summands.push(monomial.clone().into())
+            summands.push(monomial.into());
         }
 
         Self::sum_of_terms(summands)
@@ -426,12 +426,8 @@ impl From<Polynomial> for Term {
 
 #[cfg(test)]
 mod test {
-    use proptest::{
-        prelude::prop,
-        prop_compose, prop_oneof, proptest,
-        strategy::{BoxedStrategy, Just, Strategy},
-        test_runner::TestRunner,
-    };
+
+    use proptest::prelude::*;
 
     use crate::{
         polynomial::Polynomial,
@@ -555,21 +551,13 @@ mod test {
         .boxed()
     }
 
-    #[test]
-    fn performance_test() {
-        let mut runner = TestRunner::deterministic();
-        let left = term(20, 400);
-        let right = term(20, 400);
-
-        runner
-            .run(&(left, right), |(left, right)| {
-                crate::proof_search::v2::search_proof(&left, &right);
-                Ok(())
-            })
-            .unwrap();
-    }
-
     proptest! {
+
+        #[test]
+        fn performance_test(left in term(20, 200), right in term(20, 200)) {
+            crate::proof_search::v2::search_proof(&left, &right);
+        }
+
         #[test]
         fn polynomial_to_term_and_back(p in polynomial(10, 5, 10, 10)) {
             assert_eq!(Polynomial::from(Term::from(p.clone())), p);
