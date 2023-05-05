@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::hash::Hash;
 
 #[derive(Debug, Clone)]
@@ -6,7 +5,7 @@ pub struct Multiset<T>
 where
     T: Hash + Eq,
 {
-    elements: HashMap<T, u32>,
+    elements: Vec<(T, u32)>,
 }
 
 impl<T> FromIterator<(T, u32)> for Multiset<T>
@@ -14,10 +13,8 @@ where
     T: Eq + Hash,
 {
     fn from_iter<U: IntoIterator<Item = (T, u32)>>(iter: U) -> Self {
-        let mut multiset = Self::new();
-        for e in iter {
-            *multiset.amount_mut(e.0) = e.1;
-        }
+        let mut multiset = Multiset::new();
+        multiset.extend(iter);
         multiset
     }
 }
@@ -50,7 +47,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            elements: HashMap::new(),
+            elements: Vec::new(),
         }
     }
 
@@ -61,19 +58,40 @@ where
     }
 
     pub fn amount(&self, element: &T) -> u32 {
-        *self.elements.get(element).unwrap_or(&0)
+        *self
+            .elements
+            .iter()
+            .filter_map(|(x, amount)| if x == element { Some(amount) } else { None })
+            .next()
+            .unwrap_or(&0)
     }
 
     pub fn amount_mut(&mut self, element: T) -> &mut u32 {
-        self.elements.entry(element).or_insert(0)
+        let index = self
+            .elements
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (k, _))| if k == &element { Some(i) } else { None })
+            .next();
+
+        if let Some(index) = index {
+            &mut self.elements[index].1
+        } else {
+            self.elements.push((element, 0));
+            &mut self.elements.last_mut().expect("just pushed an element").1
+        }
     }
 
     pub fn amount_iter(&self) -> impl Iterator<Item = (&T, &u32)> {
-        self.elements.iter().filter(|(_, v)| **v > 0)
+        self.elements
+            .iter()
+            .filter_map(|(k, v)| if *v > 0 { Some((k, v)) } else { None })
     }
 
-    pub fn amount_iter_mut(&mut self) -> impl Iterator<Item = (&T, &mut u32)> {
-        self.elements.iter_mut()
+    pub fn amount_iter_mut(&mut self) -> impl Iterator<Item = (&mut T, &mut u32)> {
+        self.elements
+            .iter_mut()
+            .filter_map(|(k, v)| if *v > 0 { Some((k, v)) } else { None })
     }
 
     pub fn into_amount_iter(self) -> impl Iterator<Item = (T, u32)> {
@@ -148,9 +166,8 @@ where
     T: Eq + Hash,
 {
     fn extend<U: IntoIterator<Item = (T, u32)>>(&mut self, iter: U) {
-        for (element, amount) in iter {
-            let value = self.elements.entry(element).or_insert(0);
-            *value += amount;
+        for (k, v) in iter {
+            *self.amount_mut(k) += v;
         }
     }
 }
@@ -183,7 +200,7 @@ mod test {
     fn multiset_from_iter() {
         let multiset = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 0), (0, 2)]);
 
-        assert_eq!(multiset.amount(&0), 2);
+        assert_eq!(multiset.amount(&0), 3);
         assert_eq!(multiset.amount(&1), 2);
         assert_eq!(multiset.amount(&2), 0);
         assert_eq!(multiset.amount(&3), 0);
