@@ -16,8 +16,8 @@ use crate::{
 fn main() {
     let x = || Polynomial::from_variable(0);
     let y = || Polynomial::from_variable(1);
-
     println!("print polynomial: {}", 3 * x() * y() + 2 * x() + y() + 1);
+
     let left = 2 * x() * y() + 1;
     let right = 2 * x() + 2 * y();
     let disequality = TermDisequality::from_terms(left, right);
