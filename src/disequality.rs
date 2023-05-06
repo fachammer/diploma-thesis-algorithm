@@ -13,6 +13,23 @@ pub struct PolynomialDisequality {
     pub right: Polynomial,
 }
 
+trait MinMax
+where
+    Self: Sized,
+{
+    fn min_max(self, other: Self) -> (Self, Self);
+}
+
+impl<T: Ord> MinMax for T {
+    fn min_max(self, other: Self) -> (Self, Self) {
+        if self <= other {
+            (self, other)
+        } else {
+            (other, self)
+        }
+    }
+}
+
 impl PolynomialDisequality {
     pub fn from_polynomials_reduced(left: Polynomial, right: Polynomial) -> Self {
         let disequality = PolynomialDisequality { left, right };
@@ -23,15 +40,11 @@ impl PolynomialDisequality {
         let mut left = Multiset::from(self.left);
         let mut right = Multiset::from(self.right);
 
-        for (monomial, amount) in left.amount_iter_mut() {
+        for (monomial, left_amount) in left.amount_iter_mut() {
             if let Some(right_amount) = right.amount_mut_by_ref(monomial) {
-                if amount > right_amount {
-                    *amount -= *right_amount;
-                    *right_amount = 0;
-                } else {
-                    *right_amount -= *amount;
-                    *amount = 0;
-                }
+                let (smaller, larger) = left_amount.min_max(right_amount);
+                *larger -= *smaller;
+                *smaller = 0;
             }
         }
 
