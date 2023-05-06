@@ -18,8 +18,7 @@ pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
 pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
     let polynomial_disequality = PolynomialDisequality::from(disequality.clone());
 
-    let proof = search_proof_as_polynomials(polynomial_disequality);
-    let proof_attempt = ProofAttempt::try_from(proof).expect("proof attempt has no holes");
+    let proof_attempt = search_proof_as_polynomials(polynomial_disequality);
     let skeleton = Skeleton::try_from(proof_attempt)?;
     Ok(Proof {
         conclusion: disequality.clone(),
@@ -27,30 +26,63 @@ pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt
     })
 }
 
-fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofInProgress {
+fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofAttempt {
     let mut proof = ProofInProgress::Hole;
 
     let mut holes = VecDeque::from_iter([(&mut proof, disequality, u32::MAX)]);
 
     while let Some((hole, disequality, previous_split_variable)) = holes.pop_front() {
         let disequality = disequality.reduce();
-        if let Some(proof) = find_non_split_proof(&disequality) {
-            *hole = proof;
+        if let Ok(()) = try_fill_hole_with_non_split_proof(hole, &disequality) {
             continue;
         }
 
         let split_variable = next_split_variable(&disequality, previous_split_variable);
-        let (zero_proof, successor_proof) = split_at_hole(hole, split_variable);
+        let (zero_proof, successor_proof) = fill_hole_with_split_proof(hole, split_variable);
         let zero_disequality = disequality.at_variable_zero(split_variable);
         holes.push_back((zero_proof, zero_disequality, split_variable));
 
         let successor_disequality = disequality.into_at_variable_plus_one(split_variable);
         holes.push_back((successor_proof, successor_disequality, split_variable));
     }
-    proof
+
+    ProofAttempt::try_from(proof).expect("proof attempt has no holes")
 }
 
-fn split_at_hole(
+fn try_fill_hole_with_non_split_proof(
+    hole: &mut ProofInProgress,
+    disequality: &PolynomialDisequality,
+) -> Result<(), ()> {
+    *hole = if disequality.has_zero_root() {
+        ProofInProgress::FoundRoot
+    } else if disequality.is_in_successor_non_zero_form() {
+        ProofInProgress::SuccessorNonZero
+    } else if !disequality.is_strictly_monomially_comparable() {
+        ProofInProgress::NotStrictlyMonomiallyComparable
+    } else {
+        return Err(());
+    };
+    Ok(())
+}
+
+fn next_split_variable(disequality: &PolynomialDisequality, previous_variable: u32) -> u32 {
+    let mut variables: Vec<u32> = disequality.variables().copied().collect();
+    assert!(!variables.is_empty());
+    variables.sort();
+
+    let get_first = || {
+        variables
+            .first()
+            .expect("must exist, otherwise previous code would have failed")
+    };
+
+    *variables
+        .iter()
+        .find(|&&v| v > previous_variable)
+        .unwrap_or_else(get_first)
+}
+
+fn fill_hole_with_split_proof(
     hole: &mut ProofInProgress,
     split_variable: u32,
 ) -> (&mut ProofInProgress, &mut ProofInProgress) {
@@ -66,34 +98,7 @@ fn split_at_hole(
     (zero_proof, successor_proof)
 }
 
-fn next_split_variable(disequality: &PolynomialDisequality, previous_variable: u32) -> u32 {
-    let mut variables: Vec<u32> = disequality.variables().copied().collect();
-    variables.sort();
-
-    *variables
-        .iter()
-        .find(|&&v| v > previous_variable)
-        .unwrap_or_else(|| {
-            disequality
-                .variables()
-                .next()
-                .expect("must exist, otherwise previous code would have returned")
-        })
-}
-
-fn find_non_split_proof(disequality: &PolynomialDisequality) -> Option<ProofInProgress> {
-    if !disequality.is_strictly_monomially_comparable() {
-        Some(ProofInProgress::NotStrictlyMonomiallyComparable)
-    } else if disequality.has_zero_root() {
-        Some(ProofInProgress::FoundRoot)
-    } else if disequality.is_in_successor_non_zero_form() {
-        Some(ProofInProgress::SuccessorNonZero)
-    } else {
-        None
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ProofInProgress {
     NotStrictlyMonomiallyComparable,
     FoundRoot,
