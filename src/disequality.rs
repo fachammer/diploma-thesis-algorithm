@@ -50,14 +50,6 @@ impl PolynomialDisequality {
         unique_variables.into_iter()
     }
 
-    pub fn is_equivalent_to(&self, other: &Self) -> bool {
-        let self_reduced = self.clone().reduce();
-        let other_reduced = other.clone().reduce();
-
-        self_reduced.left == other_reduced.left && self_reduced.right == other_reduced.right
-            || self_reduced.left == other_reduced.right && self_reduced.right == other_reduced.left
-    }
-
     pub fn at_variable_zero(&self, variable: u32) -> Self {
         Self {
             left: self.left.at_variable_zero(variable),
@@ -107,11 +99,6 @@ impl TermDisequality {
 
     pub fn right(&self) -> &Term {
         &self.right
-    }
-
-    pub fn is_equivalent_to(&self, other: &Self) -> bool {
-        PolynomialDisequality::from(self.clone())
-            .is_equivalent_to(&PolynomialDisequality::from(other.clone()))
     }
 
     pub fn substitute(&self, substitution: &Substitution) -> Self {
