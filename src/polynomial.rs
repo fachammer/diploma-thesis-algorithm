@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    ops::{Add, Mul},
+    ops::{Add, Mul, MulAssign},
 };
 
 use crate::{
@@ -38,6 +38,15 @@ impl Monomial {
     pub fn exponent(&self, variable: &u32) -> u32 {
         self.0.amount(variable)
     }
+
+    fn has_variable(&self, variable: &u32) -> bool {
+        self.0.contains(variable)
+    }
+
+    fn without_variable(self, variable: u32) -> Self {
+        let variable_monomial = Monomial::from_variable(variable, self.exponent(&variable));
+        Self(self.0.subtract(variable_monomial.0))
+    }
 }
 
 impl Mul for Monomial {
@@ -46,6 +55,12 @@ impl Mul for Monomial {
     fn mul(mut self, rhs: Self) -> Self::Output {
         self.0.extend(rhs.0.into_amount_iter());
         self
+    }
+}
+
+impl MulAssign for Monomial {
+    fn mul_assign(&mut self, rhs: Self) {
+        self.0.extend(rhs.0.into_amount_iter())
     }
 }
 
@@ -140,6 +155,65 @@ impl Polynomial {
 
     pub fn non_zero_monomials_iter(&self) -> impl Iterator<Item = &Monomial> {
         self.0.support()
+    }
+
+    pub fn at_variable_zero(&self, variable: u32) -> Self {
+        let mut monomials = Vec::with_capacity(self.0.support().count());
+        for (monomial, amount) in self.0.amount_iter() {
+            if !monomial.has_variable(&variable) {
+                monomials.push((monomial.clone(), *amount));
+            }
+        }
+        Self::from(Multiset::from_iter(monomials.into_iter()))
+    }
+
+    fn power_of_variable_plus_one(variable: u32, exponent: u32) -> Vec<(Monomial, u32)> {
+        let exponent_usize: usize = exponent
+            .try_into()
+            .expect("we should be on a system with at least 32 bit");
+        let mut monomials = Vec::with_capacity(exponent_usize + 1);
+
+        for k in 0..=exponent {
+            monomials.push((
+                Monomial::from_variable(variable, k),
+                Self::binomial_coefficient(exponent, k),
+            ));
+        }
+        monomials
+    }
+
+    fn binomial_coefficient(n: u32, k: u32) -> u32 {
+        let (numerator, denominator): (u32, u32) = if 2 * k > n {
+            (
+                (k + 1..=n).into_iter().product(),
+                (1..=(n - k)).into_iter().product(),
+            )
+        } else {
+            (
+                ((n - k) + 1..=n).into_iter().product(),
+                (1..=k).into_iter().product(),
+            )
+        };
+        numerator / denominator
+    }
+
+    pub fn into_at_variable_plus_one(self, variable: u32) -> Self {
+        let mut monomials = Vec::with_capacity(self.0.support().count());
+        for (monomial, amount) in self.0.into_amount_iter() {
+            let variable_exponent = monomial.exponent(&variable);
+            if variable_exponent > 0 {
+                let mut binomials = Self::power_of_variable_plus_one(variable, variable_exponent);
+                let monomial_without_variable = monomial.without_variable(variable);
+                for (k, v) in binomials.iter_mut() {
+                    *k *= monomial_without_variable.clone();
+                    *v *= amount
+                }
+                monomials.extend(binomials);
+            } else {
+                monomials.push((monomial, amount));
+            }
+        }
+        Self::from_coefficients(monomials.into_iter())
     }
 }
 
@@ -320,5 +394,22 @@ mod test {
         let x = Polynomial::from_variable(0);
         let y = Polynomial::from_variable(1);
         assert!(!x.is_strictly_monomially_comparable_to(&y))
+    }
+
+    #[test]
+    fn at_variable_zero() {
+        let x = Polynomial::from_variable(0);
+        let y = Polynomial::from_variable(1);
+        assert_eq!((2 * x * y + 1).at_variable_zero(0), 1.into());
+    }
+
+    #[test]
+    fn into_at_variable_plus_one() {
+        let x = || Polynomial::from_variable(0);
+        let y = || Polynomial::from_variable(1);
+        assert_eq!(
+            (2 * x() * y() + 1).into_at_variable_plus_one(0),
+            2 * x() * y() + 1 + (2 * y())
+        );
     }
 }

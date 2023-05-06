@@ -122,6 +122,15 @@ where
         }
         elements.into_iter()
     }
+
+    pub(crate) fn contains(&self, element: &T) -> bool {
+        for (k, v) in self.elements.iter() {
+            if k == element && v > &0 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl<T> Default for Multiset<T>

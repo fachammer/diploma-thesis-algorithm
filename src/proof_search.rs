@@ -10,8 +10,7 @@ pub mod v2 {
     use crate::{
         disequality::{PolynomialDisequality, TermDisequality},
         polynomial::{Monomial, Polynomial},
-        proof::Proof,
-        substitution::Substitution,
+        proof::v2::{Proof, Skeleton},
         term::Term,
     };
 
@@ -22,12 +21,7 @@ pub mod v2 {
     pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, String> {
         let left_poly = Polynomial::from(left.clone());
         let right_poly = Polynomial::from(right.clone());
-        let PolynomialDisequality {
-            left: left_poly,
-            right: right_poly,
-        } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
-        let left = Term::from(left_poly);
-        let right = Term::from(right_poly);
+        let conclusion = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
         let right_free_variables = right.free_variables();
         let left_free_variables = left.free_variables();
         let free_variables = left_free_variables.union(&right_free_variables);
@@ -36,19 +30,17 @@ pub mod v2 {
         free_variables.sort();
 
         let mut proof = Box::new(ProofInProgress::Hole {
-            conclusion: TermDisequality::from_terms(left, right),
+            conclusion,
             next_variables: free_variables.iter().copied().cycle(),
         });
         let mut proof_holes = VecDeque::from_iter(vec![proof.as_mut()]);
 
         while let Some(hole) = proof_holes.pop_front() {
             let (conclusion, next_variables) = hole.hole().unwrap();
-            let left_poly = Polynomial::from(conclusion.left().clone());
-            let right_poly = Polynomial::from(conclusion.right().clone());
             let PolynomialDisequality {
                 left: left_poly,
                 right: right_poly,
-            } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
+            } = conclusion.clone();
 
             if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
                 *hole = ProofInProgress::NotStrictlyMonomiallyComparable;
@@ -57,18 +49,14 @@ pub mod v2 {
 
             if left_poly == 0.into() {
                 *hole = if right_poly.coefficient(&Monomial::one()) > 0 {
-                    ProofInProgress::SuccessorNonZero {
-                        term: right_poly.predecessor().into(),
-                    }
+                    ProofInProgress::SuccessorNonZero
                 } else {
                     ProofInProgress::FoundRoot
                 };
                 continue;
             } else if right_poly == 0.into() {
                 *hole = if left_poly.coefficient(&Monomial::one()) > 0 {
-                    ProofInProgress::SuccessorNonZero {
-                        term: left_poly.predecessor().into(),
-                    }
+                    ProofInProgress::SuccessorNonZero
                 } else {
                     ProofInProgress::FoundRoot
                 };
@@ -78,21 +66,23 @@ pub mod v2 {
             let mut next_variables = next_variables.clone();
             let variable = next_variables.next().unwrap();
 
+            let zero_conclusion = conclusion.at_variable_zero(variable).reduce();
             let zero_proof = Box::new(ProofInProgress::Hole {
-                conclusion: conclusion
-                    .substitute(&Substitution::from_iter(vec![(variable, Term::Zero)])),
+                conclusion: zero_conclusion,
                 next_variables: next_variables.clone(),
             });
+            let successor_conclusion = PolynomialDisequality {
+                left: left_poly,
+                right: right_poly,
+            }
+            .into_at_variable_plus_one(variable)
+            .reduce();
             let successor_proof = Box::new(ProofInProgress::Hole {
-                conclusion: conclusion.substitute(&Substitution::from_iter(vec![(
-                    variable,
-                    Term::S(Term::Variable(variable).into()),
-                )])),
+                conclusion: successor_conclusion,
                 next_variables: next_variables.clone(),
             });
             *hole = ProofInProgress::Split {
                 variable,
-                conclusion: conclusion.clone(),
                 zero_proof,
                 successor_proof,
             };
@@ -102,7 +92,12 @@ pub mod v2 {
         }
 
         let proof_attempt = ProofAttempt::try_from(*proof).expect("proof has no holes");
-        Proof::try_from(proof_attempt)
+        let skeleton = Skeleton::try_from(proof_attempt)?;
+        let conclusion = TermDisequality::from_terms(left.clone(), right.clone());
+        Ok(Proof {
+            conclusion,
+            skeleton,
+        })
     }
 
     #[derive(Clone)]
@@ -110,15 +105,12 @@ pub mod v2 {
         NotStrictlyMonomiallyComparable,
         FoundRoot,
         Hole {
-            conclusion: TermDisequality,
+            conclusion: PolynomialDisequality,
             next_variables: I,
         },
-        SuccessorNonZero {
-            term: Term,
-        },
+        SuccessorNonZero,
         Split {
             variable: u32,
-            conclusion: TermDisequality,
             zero_proof: Box<ProofInProgress<I>>,
             successor_proof: Box<ProofInProgress<I>>,
         },
@@ -136,7 +128,7 @@ pub mod v2 {
             }
         }
 
-        fn hole(&self) -> Option<(&TermDisequality, &I)> {
+        fn hole(&self) -> Option<(&PolynomialDisequality, &I)> {
             match self {
                 ProofInProgress::Hole {
                     conclusion,
@@ -151,12 +143,9 @@ pub mod v2 {
     pub enum ProofAttempt {
         NotStrictlyMonomiallyComparable,
         FoundRoot,
-        SuccessorNonZero {
-            term: Term,
-        },
+        SuccessorNonZero,
         Split {
             variable: u32,
-            conclusion: TermDisequality,
             zero_proof: Box<ProofAttempt>,
             successor_proof: Box<ProofAttempt>,
         },
@@ -172,10 +161,9 @@ pub mod v2 {
                 }
                 ProofInProgress::FoundRoot => Ok(Self::FoundRoot),
                 ProofInProgress::Hole { .. } => Err(String::from("proof is incomplete")),
-                ProofInProgress::SuccessorNonZero { term } => Ok(Self::SuccessorNonZero { term }),
+                ProofInProgress::SuccessorNonZero => Ok(Self::SuccessorNonZero),
                 ProofInProgress::Split {
                     variable,
-                    conclusion,
                     zero_proof,
                     successor_proof,
                 } => match (
@@ -184,7 +172,6 @@ pub mod v2 {
                 ) {
                     (Ok(zero_attempt), Ok(successor_attempt)) => Ok(Self::Split {
                         variable,
-                        conclusion,
                         zero_proof: zero_attempt.into(),
                         successor_proof: successor_attempt.into(),
                     }),
@@ -194,7 +181,7 @@ pub mod v2 {
         }
     }
 
-    impl TryFrom<ProofAttempt> for Proof {
+    impl TryFrom<ProofAttempt> for Skeleton {
         type Error = String;
 
         fn try_from(value: ProofAttempt) -> Result<Self, Self::Error> {
@@ -202,21 +189,19 @@ pub mod v2 {
                 ProofAttempt::NotStrictlyMonomiallyComparable | ProofAttempt::FoundRoot => {
                     Err(String::from("error"))
                 }
-                ProofAttempt::SuccessorNonZero { term } => Ok(Proof::SuccessorNonZero { term }),
+                ProofAttempt::SuccessorNonZero => Ok(Skeleton::SuccessorNonZero),
                 ProofAttempt::Split {
                     variable,
-                    conclusion,
                     zero_proof,
                     successor_proof,
                 } => match (
                     Self::try_from(*zero_proof),
                     Self::try_from(*successor_proof),
                 ) {
-                    (Ok(zero_proof), Ok(successor_proof)) => Ok(Self::Split {
+                    (Ok(zero_skeleton), Ok(successor_skeleton)) => Ok(Self::Split {
                         variable,
-                        conclusion,
-                        zero_proof: zero_proof.into(),
-                        successor_proof: successor_proof.into(),
+                        zero_skeleton: zero_skeleton.into(),
+                        successor_skeleton: successor_skeleton.into(),
                     }),
                     _ => Err(String::from("error")),
                 },

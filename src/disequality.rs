@@ -33,6 +33,20 @@ impl PolynomialDisequality {
         self_reduced.left == other_reduced.left && self_reduced.right == other_reduced.right
             || self_reduced.left == other_reduced.right && self_reduced.right == other_reduced.left
     }
+
+    pub fn at_variable_zero(&self, variable: u32) -> Self {
+        Self {
+            left: self.left.at_variable_zero(variable),
+            right: self.right.at_variable_zero(variable),
+        }
+    }
+
+    pub fn into_at_variable_plus_one(self, variable: u32) -> Self {
+        Self {
+            left: self.left.into_at_variable_plus_one(variable),
+            right: self.right.into_at_variable_plus_one(variable),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
