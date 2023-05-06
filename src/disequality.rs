@@ -93,7 +93,7 @@ impl PolynomialDisequality {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub(crate) struct TermDisequality {
+pub struct TermDisequality {
     left: Term,
     right: Term,
 }

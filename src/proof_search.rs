@@ -11,11 +11,11 @@ use crate::{
     proof::{Proof, Skeleton},
 };
 
-pub(crate) fn is_disequality_provable(disequality: &TermDisequality) -> bool {
+pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
     search_proof(disequality).is_ok()
 }
 
-pub(crate) fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
+pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
     let polynomial_disequality = PolynomialDisequality::from(disequality.clone());
 
     let proof_attempt = search_proof_as_polynomials(polynomial_disequality);
@@ -125,7 +125,7 @@ impl ProofInProgress {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum ProofAttempt {
+pub enum ProofAttempt {
     NotStrictlyMonomiallyComparable,
     FoundRoot,
     SuccessorNonZero,

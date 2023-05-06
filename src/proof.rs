@@ -15,13 +15,13 @@ pub(crate) enum Skeleton {
     },
 }
 #[derive(Clone, Debug)]
-pub(crate) struct Proof {
+pub struct Proof {
     pub(crate) skeleton: Skeleton,
     pub(crate) conclusion: TermDisequality,
 }
 
 impl Proof {
-    pub(crate) fn check(&self) -> bool {
+    pub fn check(&self) -> bool {
         match &self.skeleton {
             Skeleton::SuccessorNonZero => {
                 let left = self.conclusion.left();
