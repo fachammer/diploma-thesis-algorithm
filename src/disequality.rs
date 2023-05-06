@@ -19,9 +19,7 @@ impl PolynomialDisequality {
         let mut right = Multiset::from(self.right);
 
         for (monomial, amount) in left.amount_iter_mut() {
-            if right.contains(monomial) {
-                // TODO: avoid this clone
-                let right_amount = right.amount_mut(monomial.clone());
+            if let Some(right_amount) = right.amount_mut_by_ref(monomial) {
                 if amount > right_amount {
                     *amount -= *right_amount;
                     *right_amount = 0;

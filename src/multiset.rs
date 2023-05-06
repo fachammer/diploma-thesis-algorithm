@@ -66,6 +66,13 @@ where
             .unwrap_or(&0)
     }
 
+    pub fn amount_mut_by_ref(&mut self, element: &T) -> Option<&mut u32> {
+        self.elements
+            .iter_mut()
+            .filter_map(|(k, v)| if k == element { Some(v) } else { None })
+            .next()
+    }
+
     pub fn amount_mut(&mut self, element: T) -> &mut u32 {
         let index = self
             .elements
