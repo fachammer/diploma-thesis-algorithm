@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 
 use crate::{
     disequality::{PolynomialDisequality, TermDisequality},
-    proof::v2::{Proof, Skeleton},
+    proof::{Proof, Skeleton},
 };
 
 pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
@@ -319,6 +319,7 @@ mod test {
 
     #[test]
     fn proof_search_does_not_crash_on_term_with_variable_times_zero() {
+        #![allow(unused_must_use)]
         use Term::*;
         let left = S(Zero.into());
         let right = Mul(
@@ -335,6 +336,7 @@ mod test {
 
     #[test]
     fn proof_search_does_not_crash_on_unsolvable_equation() {
+        #![allow(unused_must_use)]
         use Term::*;
         let left = S(Zero.into());
         let right = Add(Variable(1).into(), Variable(0).into());
