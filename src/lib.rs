@@ -1,5 +1,3 @@
-use wasm_bindgen::prelude::wasm_bindgen;
-
 mod disequality;
 mod multiset;
 mod polynomial;
@@ -8,12 +6,12 @@ pub mod proof_search;
 mod substitution;
 mod term;
 
-#[wasm_bindgen]
 extern "C" {
-    fn alert(s: &str);
+    pub fn alert(ptr: *const u8, length: usize);
 }
 
-#[wasm_bindgen]
-pub fn greet() {
-    alert("Hello, World!");
+#[no_mangle]
+pub extern "C" fn greet() {
+    let s = "Hellow, world";
+    unsafe { alert(s.as_ptr(), s.len()) };
 }
