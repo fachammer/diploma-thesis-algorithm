@@ -13,7 +13,11 @@ where
     T: Eq + Hash,
 {
     fn from_iter<U: IntoIterator<Item = (T, u32)>>(iter: U) -> Self {
-        let mut multiset = Multiset::new();
+        let iter = iter.into_iter();
+        let (lower_bound, upper_bound) = iter.size_hint();
+        let mut multiset = Self {
+            elements: Vec::with_capacity(upper_bound.unwrap_or(lower_bound)),
+        };
         multiset.extend(iter);
         multiset
     }
@@ -106,13 +110,7 @@ where
     }
 
     pub fn is_multisubset_of(&self, other: &Multiset<T>) -> bool {
-        for e in self.support() {
-            if self.amount(e) > other.amount(e) {
-                return false;
-            }
-        }
-
-        true
+        self.support().all(|k| self.amount(k) <= other.amount(k))
     }
 
     #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]

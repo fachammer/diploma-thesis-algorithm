@@ -33,28 +33,28 @@ pub mod v2 {
             conclusion,
             next_variables: free_variables.iter().copied().cycle(),
         });
-        let mut proof_holes = VecDeque::from_iter(vec![proof.as_mut()]);
+        let mut proof_holes = VecDeque::from_iter([proof.as_mut()]);
 
         while let Some(hole) = proof_holes.pop_front() {
             let (conclusion, next_variables) = hole.hole().unwrap();
             let PolynomialDisequality {
                 left: left_poly,
                 right: right_poly,
-            } = conclusion.clone();
+            } = conclusion;
 
-            if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
+            if !left_poly.is_strictly_monomially_comparable_to(right_poly) {
                 *hole = ProofInProgress::NotStrictlyMonomiallyComparable;
                 continue;
             }
 
-            if left_poly == 0.into() {
+            if left_poly == &0.into() {
                 *hole = if right_poly.coefficient(&Monomial::one()) > 0 {
                     ProofInProgress::SuccessorNonZero
                 } else {
                     ProofInProgress::FoundRoot
                 };
                 continue;
-            } else if right_poly == 0.into() {
+            } else if right_poly == &0.into() {
                 *hole = if left_poly.coefficient(&Monomial::one()) > 0 {
                     ProofInProgress::SuccessorNonZero
                 } else {
@@ -72,8 +72,8 @@ pub mod v2 {
                 next_variables: next_variables.clone(),
             });
             let successor_conclusion = PolynomialDisequality {
-                left: left_poly,
-                right: right_poly,
+                left: left_poly.clone(),
+                right: right_poly.clone(),
             }
             .into_at_variable_plus_one(variable)
             .reduce();

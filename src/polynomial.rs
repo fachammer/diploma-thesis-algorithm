@@ -130,11 +130,13 @@ impl Polynomial {
     }
 
     pub fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
-        let PolynomialDisequality { left, right } =
-            PolynomialDisequality::from_polynomials_reduced(self.clone(), other.clone());
-
-        for m_1 in left.0.support() {
-            if right.0.support().all(|m_2| !m_1.strictly_divides(m_2)) {
+        for m_1 in self.0.support().filter(|m| !other.0.contains(m)) {
+            if other
+                .0
+                .support()
+                .filter(|m| !self.0.contains(m))
+                .all(|m_2| !m_1.strictly_divides(m_2))
+            {
                 return false;
             }
         }
@@ -198,7 +200,7 @@ impl Polynomial {
     }
 
     pub fn into_at_variable_plus_one(self, variable: u32) -> Self {
-        let mut monomials = Vec::with_capacity(self.0.support().count());
+        let mut monomials = Vec::with_capacity(10 * self.0.support().count());
         for (monomial, amount) in self.0.into_amount_iter() {
             let variable_exponent = monomial.exponent(&variable);
             if variable_exponent > 0 {
