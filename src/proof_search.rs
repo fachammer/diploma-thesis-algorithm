@@ -97,11 +97,10 @@ pub mod v2 {
                 disequality.right.at_variable_zero(variable),
                 variable,
             ));
-            let PolynomialDisequality { left, right } = disequality;
             proof_holes.push_back((
                 successor_proof,
-                left.into_at_variable_plus_one(variable),
-                right.into_at_variable_plus_one(variable),
+                disequality.left.into_at_variable_plus_one(variable),
+                disequality.right.into_at_variable_plus_one(variable),
                 variable,
             ));
         }
