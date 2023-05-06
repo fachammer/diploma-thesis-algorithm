@@ -9,7 +9,10 @@ mod term;
 use polynomial::Polynomial;
 use term::Term;
 
-use crate::proof_search::v2::{is_negated_equality_provable, search_proof};
+use crate::{
+    disequality::TermDisequality,
+    proof_search::v2::{is_term_disequality_provable, search_proof},
+};
 
 fn main() {
     let x = || Polynomial::from_variable(0);
@@ -19,11 +22,9 @@ fn main() {
     let y = || Polynomial::from_variable(1);
     let left = 2 * x() * y() + 1;
     let right = 2 * x() + 2 * y();
-    assert!(is_negated_equality_provable(
-        &left.clone().into(),
-        &right.clone().into()
-    ));
-    let proof = search_proof(&left.into(), &right.into()).expect("should find proof");
+    let disequality = TermDisequality::from_terms(left, right);
+    assert!(is_term_disequality_provable(&disequality));
+    let proof = search_proof(&disequality).expect("should find proof");
 
     println!("print proof :\n{}", proof);
     let proof_correct = proof.check();

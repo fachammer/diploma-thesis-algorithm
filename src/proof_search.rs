@@ -9,28 +9,31 @@ pub mod v2 {
 
     use crate::{
         disequality::{PolynomialDisequality, TermDisequality},
-        polynomial::Polynomial,
         proof::v2::{Proof, Skeleton},
-        term::Term,
     };
 
-    pub fn is_negated_equality_provable(left: &Term, right: &Term) -> bool {
-        search_proof(left, right).is_ok()
+    pub fn is_term_disequality_provable(disequality: &TermDisequality) -> bool {
+        search_proof(disequality).is_ok()
     }
 
-    pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, ProofAttempt> {
-        let left_poly = Polynomial::from(left.clone());
-        let right_poly = Polynomial::from(right.clone());
+    pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
+        let polynomial_disequality = PolynomialDisequality::from(disequality.clone());
 
-        let disequality = PolynomialDisequality {
-            left: left_poly,
-            right: right_poly,
-        };
+        let proof = search_proof_as_polynomials(polynomial_disequality);
+        let proof_attempt = ProofAttempt::try_from(proof).expect("proof attempt has no holes");
+        let skeleton = Skeleton::try_from(proof_attempt)?;
+        Ok(Proof {
+            conclusion: disequality.clone(),
+            skeleton,
+        })
+    }
 
-        let mut proof = Box::new(ProofInProgress::Hole);
-        let mut proof_holes = VecDeque::from_iter([(proof.as_mut(), disequality, u32::MAX)]);
+    fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofInProgress {
+        let mut proof = ProofInProgress::Hole;
 
-        while let Some((hole, disequality, previous_split_variable)) = proof_holes.pop_front() {
+        let mut holes = VecDeque::from_iter([(&mut proof, disequality, u32::MAX)]);
+
+        while let Some((hole, disequality, previous_split_variable)) = holes.pop_front() {
             let disequality = disequality.reduce();
             if let Some(proof) = find_non_split_proof(&disequality) {
                 *hole = proof;
@@ -40,19 +43,12 @@ pub mod v2 {
             let split_variable = next_split_variable(&disequality, previous_split_variable);
             let (zero_proof, successor_proof) = split_at_hole(hole, split_variable);
             let zero_disequality = disequality.at_variable_zero(split_variable);
-            proof_holes.push_back((zero_proof, zero_disequality, split_variable));
+            holes.push_back((zero_proof, zero_disequality, split_variable));
 
             let successor_disequality = disequality.into_at_variable_plus_one(split_variable);
-            proof_holes.push_back((successor_proof, successor_disequality, split_variable));
+            holes.push_back((successor_proof, successor_disequality, split_variable));
         }
-
-        let proof_attempt = ProofAttempt::try_from(*proof).expect("proof attempt has no holes");
-        let skeleton = Skeleton::try_from(proof_attempt)?;
-        let conclusion = TermDisequality::from_terms(left.clone(), right.clone());
-        Ok(Proof {
-            conclusion,
-            skeleton,
-        })
+        proof
     }
 
     fn split_at_hole(
@@ -235,7 +231,7 @@ mod v1 {
         term::Term,
     };
 
-    pub fn is_negated_equality_provable(left: &Term, right: &Term) -> bool {
+    pub fn is_disequality_provable(left: &Term, right: &Term) -> bool {
         search_proof(left, right).is_some()
     }
 
@@ -431,8 +427,9 @@ mod test {
     use proptest::prelude::*;
 
     use crate::{
+        disequality::TermDisequality,
         polynomial::Polynomial,
-        proof_search::v1::{is_negated_equality_provable, search_proof, split_substitutions},
+        proof_search::v1::{is_disequality_provable, search_proof, split_substitutions},
         substitution::Substitution,
         term::Term,
     };
@@ -443,7 +440,7 @@ mod test {
     fn provability() {
         let t = Term::S(Term::Zero.into());
         let u = Term::Zero;
-        assert!(is_negated_equality_provable(&t, &u));
+        assert!(is_disequality_provable(&t, &u));
     }
 
     #[test]
@@ -452,12 +449,12 @@ mod test {
         let left = x() * x();
         let right = x() + 1;
 
-        assert!(is_negated_equality_provable(&left.into(), &right.into()));
+        assert!(is_disequality_provable(&left.into(), &right.into()));
     }
 
     #[test]
     fn negated_equality_of_same_terms_is_not_provable() {
-        assert!(!is_negated_equality_provable(
+        assert!(!is_disequality_provable(
             &Term::S(Term::Zero.into()),
             &Term::S(Term::Zero.into())
         ));
@@ -469,7 +466,7 @@ mod test {
         let y = || Polynomial::from_variable(1);
         let left = 2 * x();
         let right = 2 * y() + 1;
-        assert!(!is_negated_equality_provable(&left.into(), &right.into()))
+        assert!(!is_disequality_provable(&left.into(), &right.into()))
     }
 
     #[test]
@@ -478,7 +475,7 @@ mod test {
         let y = || Polynomial::from_variable(1);
         let left = 2 * x() * y() + 1;
         let right = 2 * x() + 2 * y();
-        assert!(is_negated_equality_provable(&left.into(), &right.into()))
+        assert!(is_disequality_provable(&left.into(), &right.into()))
     }
 
     #[test]
@@ -516,7 +513,7 @@ mod test {
             S(Add(Zero.into(), Zero.into()).into()).into(),
         );
 
-        crate::proof_search::v2::search_proof(&left, &right);
+        crate::proof_search::v2::search_proof(&TermDisequality::from_terms(left, right));
     }
 
     #[test]
@@ -525,7 +522,7 @@ mod test {
         let left = S(Zero.into());
         let right = Add(Variable(1).into(), Variable(0).into());
 
-        crate::proof_search::v2::search_proof(&left, &right);
+        crate::proof_search::v2::search_proof(&TermDisequality::from_terms(left, right));
     }
 
     prop_compose! {
@@ -556,7 +553,7 @@ mod test {
 
         #[test]
         fn performance_test(left in term(20, 200), right in term(20, 200)) {
-            crate::proof_search::v2::search_proof(&left, &right);
+            crate::proof_search::v2::search_proof(&TermDisequality::from_terms(left, right));
         }
 
         #[test]
@@ -571,12 +568,12 @@ mod test {
 
         #[test]
         fn v2_preserves_provability_to_v1(left in term(30, 200), right in term(30, 200)) {
-            assert_eq!(is_negated_equality_provable(&left, &right), crate::proof_search::v2::is_negated_equality_provable(&left, &right))
+            assert_eq!(is_disequality_provable(&left, &right), crate::proof_search::v2::is_term_disequality_provable(&TermDisequality::from_terms(left, right)))
         }
 
         #[test]
         fn proof_search_v2_does_not_crash(left in term(30, 200), right in term(30, 200)) {
-            crate::proof_search::v2::search_proof(&left, &right);
+            crate::proof_search::v2::search_proof(&TermDisequality::from_terms(left, right));
         }
     }
 }
