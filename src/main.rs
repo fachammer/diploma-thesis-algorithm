@@ -11,7 +11,7 @@ use term::Term;
 
 use crate::{
     disequality::TermDisequality,
-    proof_search::v2::{is_term_disequality_provable, search_proof},
+    proof_search::{is_disequality_provable, search_proof},
 };
 
 fn main() {
@@ -23,7 +23,7 @@ fn main() {
     let left = 2 * x() * y() + 1;
     let right = 2 * x() + 2 * y();
     let disequality = TermDisequality::from_terms(left, right);
-    assert!(is_term_disequality_provable(&disequality));
+    assert!(is_disequality_provable(&disequality));
     let proof = search_proof(&disequality).expect("should find proof");
 
     println!("print proof :\n{}", proof);
