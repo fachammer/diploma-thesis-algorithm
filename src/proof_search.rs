@@ -76,7 +76,9 @@ pub mod v2 {
                 zero_proof: Box::new(ProofInProgress::Hole),
                 successor_proof: Box::new(ProofInProgress::Hole),
             };
-            let (zero_proof, successor_proof) = hole.proofs_mut().unwrap();
+            let (zero_proof, successor_proof) = hole
+                .proofs_mut()
+                .expect("this is something since we just set the hole as a split");
             proof_holes.push_back((
                 zero_proof,
                 left_poly.at_variable_zero(variable),
