@@ -15,14 +15,26 @@ impl PolynomialDisequality {
     }
 
     pub fn reduce(self) -> Self {
-        let left = Multiset::from(self.left);
-        let right = Multiset::from(self.right);
-        let left_reduced_monomials = left.clone().subtract(right.clone());
-        let right_reduced_monomials = right.subtract(left);
+        let mut left = Multiset::from(self.left);
+        let mut right = Multiset::from(self.right);
+
+        for (monomial, amount) in left.amount_iter_mut() {
+            if right.contains(monomial) {
+                // TODO: avoid this clone
+                let right_amount = right.amount_mut(monomial.clone());
+                if amount > right_amount {
+                    *amount -= *right_amount;
+                    *right_amount = 0;
+                } else {
+                    *right_amount -= *amount;
+                    *amount = 0;
+                }
+            }
+        }
 
         Self {
-            left: Polynomial::from(left_reduced_monomials),
-            right: Polynomial::from(right_reduced_monomials),
+            left: Polynomial::from(left),
+            right: Polynomial::from(right),
         }
     }
 
@@ -105,5 +117,23 @@ impl From<TermDisequality> for PolynomialDisequality {
 impl Display for TermDisequality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} != {}", self.left, self.right)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::polynomial::Polynomial;
+
+    use super::PolynomialDisequality;
+
+    #[test]
+    fn reduce() {
+        let left = Polynomial::from_variable(0);
+        let right = 2 * Polynomial::from_variable(0);
+
+        let PolynomialDisequality { left, right } =
+            PolynomialDisequality::from_polynomials_reduced(left, right);
+        assert_eq!(left, 0.into());
+        assert_eq!(right, Polynomial::from_variable(0));
     }
 }
