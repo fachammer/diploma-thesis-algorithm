@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use crate::{multiset::Multiset, polynomial::Polynomial, substitution::Substitution, term::Term};
 
@@ -34,6 +34,15 @@ impl PolynomialDisequality {
             left: Polynomial::from(left),
             right: Polynomial::from(right),
         }
+    }
+
+    pub fn variables(&self) -> impl Iterator<Item = &u32> {
+        let unique_variables: HashSet<&u32> = self
+            .left
+            .variables()
+            .chain(self.right.variables())
+            .collect();
+        unique_variables.into_iter()
     }
 
     pub fn is_equivalent_to(&self, other: &Self) -> bool {

@@ -38,29 +38,30 @@ pub mod v2 {
             proof.as_mut(),
             left_poly,
             right_poly,
-            free_variables.iter().copied().cycle(),
+            *free_variables.iter().max().unwrap_or(&0),
         )]);
 
-        while let Some((hole, left_poly, right_poly, next_variables)) = proof_holes.pop_front() {
-            let PolynomialDisequality {
-                left: left_poly,
-                right: right_poly,
-            } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
+        while let Some((hole, left_poly, right_poly, previous_variable)) = proof_holes.pop_front() {
+            let disequality =
+                PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
 
-            if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
+            if !disequality
+                .left
+                .is_strictly_monomially_comparable_to(&disequality.right)
+            {
                 *hole = ProofInProgress::NotStrictlyMonomiallyComparable;
                 continue;
             }
 
-            if left_poly == 0.into() {
-                *hole = if right_poly.coefficient(&Monomial::one()) > 0 {
+            if disequality.left == 0.into() {
+                *hole = if disequality.right.coefficient(&Monomial::one()) > 0 {
                     ProofInProgress::SuccessorNonZero
                 } else {
                     ProofInProgress::FoundRoot
                 };
                 continue;
-            } else if right_poly == 0.into() {
-                *hole = if left_poly.coefficient(&Monomial::one()) > 0 {
+            } else if disequality.right == 0.into() {
+                *hole = if disequality.left.coefficient(&Monomial::one()) > 0 {
                     ProofInProgress::SuccessorNonZero
                 } else {
                     ProofInProgress::FoundRoot
@@ -68,9 +69,20 @@ pub mod v2 {
                 continue;
             }
 
-            let mut next_variables = next_variables.clone();
-            let variable = next_variables.next().unwrap();
+            let variable = {
+                let mut variables: Vec<u32> = disequality.variables().copied().collect();
+                variables.sort();
 
+                *variables
+                    .iter()
+                    .find(|&&v| v > previous_variable)
+                    .unwrap_or_else(|| {
+                        disequality
+                            .variables()
+                            .next()
+                            .expect("must exist, otherwise previous code would have returned")
+                    })
+            };
             *hole = ProofInProgress::Split {
                 variable,
                 zero_proof: Box::new(ProofInProgress::Hole),
@@ -81,15 +93,16 @@ pub mod v2 {
                 .expect("this is something since we just set the hole as a split");
             proof_holes.push_back((
                 zero_proof,
-                left_poly.at_variable_zero(variable),
-                right_poly.at_variable_zero(variable),
-                next_variables.clone(),
+                disequality.left.at_variable_zero(variable),
+                disequality.right.at_variable_zero(variable),
+                variable,
             ));
+            let PolynomialDisequality { left, right } = disequality;
             proof_holes.push_back((
                 successor_proof,
-                left_poly.into_at_variable_plus_one(variable),
-                right_poly.into_at_variable_plus_one(variable),
-                next_variables,
+                left.into_at_variable_plus_one(variable),
+                right.into_at_variable_plus_one(variable),
+                variable,
             ));
         }
 

@@ -1,11 +1,10 @@
 use std::{
+    collections::HashSet,
     fmt::Display,
     ops::{Add, Mul, MulAssign},
 };
 
-use crate::{
-    disequality::PolynomialDisequality, multiset::Multiset, substitution::Substitution, Term,
-};
+use crate::{multiset::Multiset, substitution::Substitution, Term};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Monomial(Multiset<u32>);
@@ -216,6 +215,12 @@ impl Polynomial {
             }
         }
         Self(monomials)
+    }
+
+    pub(crate) fn variables(&self) -> impl Iterator<Item = &u32> {
+        let unique_variables: HashSet<&u32> =
+            self.0.support().flat_map(|m| m.0.support()).collect();
+        unique_variables.into_iter()
     }
 }
 
