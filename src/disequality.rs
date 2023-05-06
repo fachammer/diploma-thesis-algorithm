@@ -8,9 +8,9 @@ use crate::{
 };
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct PolynomialDisequality {
-    pub left: Polynomial,
-    pub right: Polynomial,
+pub(crate) struct PolynomialDisequality {
+    pub(crate) left: Polynomial,
+    pub(crate) right: Polynomial,
 }
 
 trait MinMax
@@ -31,12 +31,12 @@ impl<T: Ord> MinMax for T {
 }
 
 impl PolynomialDisequality {
-    pub fn from_polynomials_reduced(left: Polynomial, right: Polynomial) -> Self {
+    pub(crate) fn from_polynomials_reduced(left: Polynomial, right: Polynomial) -> Self {
         let disequality = PolynomialDisequality { left, right };
         disequality.reduce()
     }
 
-    pub fn reduce(self) -> Self {
+    pub(crate) fn reduce(self) -> Self {
         let mut left = Multiset::from(self.left);
         let mut right = Multiset::from(self.right);
 
@@ -54,7 +54,7 @@ impl PolynomialDisequality {
         }
     }
 
-    pub fn variables(&self) -> impl Iterator<Item = &u32> {
+    pub(crate) fn variables(&self) -> impl Iterator<Item = &u32> {
         let unique_variables: HashSet<&u32> = self
             .left
             .variables()
@@ -63,25 +63,25 @@ impl PolynomialDisequality {
         unique_variables.into_iter()
     }
 
-    pub fn at_variable_zero(&self, variable: u32) -> Self {
+    pub(crate) fn at_variable_zero(&self, variable: u32) -> Self {
         Self {
             left: self.left.at_variable_zero(variable),
             right: self.right.at_variable_zero(variable),
         }
     }
 
-    pub fn into_at_variable_plus_one(self, variable: u32) -> Self {
+    pub(crate) fn into_at_variable_plus_one(self, variable: u32) -> Self {
         Self {
             left: self.left.into_at_variable_plus_one(variable),
             right: self.right.into_at_variable_plus_one(variable),
         }
     }
 
-    pub fn is_strictly_monomially_comparable(&self) -> bool {
+    pub(crate) fn is_strictly_monomially_comparable(&self) -> bool {
         self.left.is_strictly_monomially_comparable_to(&self.right)
     }
 
-    pub fn has_zero_root(&self) -> bool {
+    pub(crate) fn has_zero_root(&self) -> bool {
         self.left.coefficient(&Monomial::one()) == 0
             && self.right.coefficient(&Monomial::one()) == 0
     }
@@ -93,28 +93,28 @@ impl PolynomialDisequality {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct TermDisequality {
+pub(crate) struct TermDisequality {
     left: Term,
     right: Term,
 }
 
 impl TermDisequality {
-    pub fn from_terms<L: Into<Term>, R: Into<Term>>(left: L, right: R) -> Self {
+    pub(crate) fn from_terms<L: Into<Term>, R: Into<Term>>(left: L, right: R) -> Self {
         TermDisequality {
             left: left.into(),
             right: right.into(),
         }
     }
 
-    pub fn left(&self) -> &Term {
+    pub(crate) fn left(&self) -> &Term {
         &self.left
     }
 
-    pub fn right(&self) -> &Term {
+    pub(crate) fn right(&self) -> &Term {
         &self.right
     }
 
-    pub fn substitute(&self, substitution: &Substitution) -> Self {
+    pub(crate) fn substitute(&self, substitution: &Substitution) -> Self {
         Self {
             left: self.left.substitute(substitution),
             right: self.right.substitute(substitution),

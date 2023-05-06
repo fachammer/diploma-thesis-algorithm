@@ -7,7 +7,6 @@ mod substitution;
 mod term;
 
 use polynomial::Polynomial;
-use term::Term;
 
 use crate::{
     disequality::TermDisequality,

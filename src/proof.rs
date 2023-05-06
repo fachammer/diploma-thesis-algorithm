@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub enum Skeleton {
+pub(crate) enum Skeleton {
     SuccessorNonZero,
     Split {
         variable: u32,
@@ -15,13 +15,13 @@ pub enum Skeleton {
     },
 }
 #[derive(Clone, Debug)]
-pub struct Proof {
-    pub skeleton: Skeleton,
-    pub conclusion: TermDisequality,
+pub(crate) struct Proof {
+    pub(crate) skeleton: Skeleton,
+    pub(crate) conclusion: TermDisequality,
 }
 
 impl Proof {
-    pub fn check(&self) -> bool {
+    pub(crate) fn check(&self) -> bool {
         match &self.skeleton {
             Skeleton::SuccessorNonZero => {
                 let left = self.conclusion.left();

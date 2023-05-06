@@ -1,9 +1,9 @@
-use std::{collections::HashSet, fmt::Display};
+use std::fmt::Display;
 
 use crate::{polynomial::Polynomial, substitution::Substitution};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Term {
+pub(crate) enum Term {
     Variable(u32),
     Zero,
     S(Box<Term>),
@@ -12,20 +12,7 @@ pub enum Term {
 }
 
 impl Term {
-    pub fn free_variables(&self) -> HashSet<u32> {
-        match self {
-            Term::Variable(v) => HashSet::from_iter(vec![*v]),
-            Term::Zero => HashSet::new(),
-            Term::S(t) => t.free_variables(),
-            Term::Add(t, u) | Term::Mul(t, u) => t
-                .free_variables()
-                .union(&u.free_variables())
-                .cloned()
-                .collect(),
-        }
-    }
-
-    pub fn sum_of_terms(mut terms: Vec<Self>) -> Self {
+    pub(crate) fn sum_of_terms(mut terms: Vec<Self>) -> Self {
         let mut sum_term = Self::Zero;
         terms.reverse();
         for term in terms.into_iter() {
@@ -35,7 +22,7 @@ impl Term {
         sum_term
     }
 
-    pub fn product_of_terms(terms: Vec<Self>) -> Self {
+    pub(crate) fn product_of_terms(terms: Vec<Self>) -> Self {
         let Some((first, rest)) = terms.split_first() else {
             return Self::S(Self::Zero.into());
         };
@@ -46,7 +33,7 @@ impl Term {
         )
     }
 
-    pub fn substitute(&self, substitution: &Substitution) -> Self {
+    pub(crate) fn substitute(&self, substitution: &Substitution) -> Self {
         match self {
             Term::Variable(v) => substitution.get(v).cloned().unwrap_or(Term::Variable(*v)),
             Term::Zero => Term::Zero,

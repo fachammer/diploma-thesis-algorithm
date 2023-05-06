@@ -4,37 +4,33 @@ use std::{
     ops::{Add, Mul, MulAssign},
 };
 
-use crate::{multiset::Multiset, substitution::Substitution, Term};
+use crate::multiset::Multiset;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct Monomial(Multiset<u32>);
+pub(crate) struct Monomial(pub(crate) Multiset<u32>);
 
 impl Monomial {
-    pub fn one() -> Self {
+    pub(crate) fn one() -> Self {
         Self(Multiset::new())
     }
 
-    pub fn from_variable(v: u32, exponent: u32) -> Self {
+    pub(crate) fn from_variable(v: u32, exponent: u32) -> Self {
         Self(Multiset::from_iter(vec![(v, exponent)]))
     }
 
-    pub fn from_exponents<T: IntoIterator<Item = (u32, u32)>>(exponents: T) -> Self {
-        Self(Multiset::from_iter(exponents))
-    }
-
-    pub fn into_variables_iter(self) -> impl Iterator<Item = u32> {
+    pub(crate) fn into_variables_iter(self) -> impl Iterator<Item = u32> {
         self.0.into_iter()
     }
 
-    pub fn strictly_divides(&self, other: &Monomial) -> bool {
+    pub(crate) fn strictly_divides(&self, other: &Monomial) -> bool {
         self.0.is_multisubset_of(&other.0) && self != other
     }
 
-    pub fn non_zero_variables_iter(&self) -> impl Iterator<Item = &u32> {
+    pub(crate) fn non_zero_variables_iter(&self) -> impl Iterator<Item = &u32> {
         self.0.support()
     }
 
-    pub fn exponent(&self, variable: &u32) -> u32 {
+    pub(crate) fn exponent(&self, variable: &u32) -> u32 {
         self.0.amount(variable)
     }
 
@@ -106,29 +102,21 @@ impl Display for Monomial {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Polynomial(Multiset<Monomial>);
+pub(crate) struct Polynomial(pub(crate) Multiset<Monomial>);
 
 impl Polynomial {
-    pub fn from_variable(v: u32) -> Self {
+    pub(crate) fn from_variable(v: u32) -> Self {
         Self(Multiset::from_iter(vec![(
             Monomial::from_variable(v, 1),
             1,
         )]))
     }
 
-    pub fn from_coefficients<T: IntoIterator<Item = (Monomial, u32)>>(coefficients: T) -> Self {
-        Self(Multiset::from_iter(coefficients))
-    }
-
-    pub fn coefficient(&self, monomial: &Monomial) -> u32 {
+    pub(crate) fn coefficient(&self, monomial: &Monomial) -> u32 {
         self.0.amount(monomial)
     }
 
-    pub fn at_substitution(&self, substitution: &Substitution) -> Term {
-        Term::from(self.clone()).substitute(substitution)
-    }
-
-    pub fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
+    pub(crate) fn is_monomially_smaller_than(&self, other: &Polynomial) -> bool {
         for m_1 in self.0.support().filter(|m| !other.0.contains(m)) {
             if other
                 .0
@@ -143,22 +131,15 @@ impl Polynomial {
         true
     }
 
-    pub fn is_strictly_monomially_comparable_to(&self, other: &Polynomial) -> bool {
+    pub(crate) fn is_strictly_monomially_comparable_to(&self, other: &Polynomial) -> bool {
         self.is_monomially_smaller_than(other) || other.is_monomially_smaller_than(self)
     }
 
-    pub fn predecessor(&self) -> Polynomial {
-        let mut polynomial = self.clone();
-        let constant_coefficient = polynomial.0.amount_mut(Monomial::one());
-        *constant_coefficient = constant_coefficient.saturating_sub(1);
-        polynomial
-    }
-
-    pub fn non_zero_monomials_iter(&self) -> impl Iterator<Item = &Monomial> {
+    pub(crate) fn non_zero_monomials_iter(&self) -> impl Iterator<Item = &Monomial> {
         self.0.support()
     }
 
-    pub fn at_variable_zero(&self, variable: u32) -> Self {
+    pub(crate) fn at_variable_zero(&self, variable: u32) -> Self {
         let mut monomials = Multiset::with_capacity(self.0.support().count());
         for (monomial, amount) in self.0.amount_iter() {
             if !monomial.has_variable(&variable) {
@@ -198,7 +179,7 @@ impl Polynomial {
         numerator / denominator
     }
 
-    pub fn into_at_variable_plus_one(self, variable: u32) -> Self {
+    pub(crate) fn into_at_variable_plus_one(self, variable: u32) -> Self {
         let mut monomials = Multiset::with_capacity(5 * self.0.support().count());
         for (monomial, amount) in self.0.into_amount_iter() {
             let variable_exponent = monomial.exponent(&variable);
@@ -309,6 +290,8 @@ impl Display for Polynomial {
 
 #[cfg(test)]
 mod test {
+    use crate::term::Term;
+
     use super::*;
 
     #[test]
@@ -334,8 +317,8 @@ mod test {
 
     #[test]
     fn eq_polynomials() {
-        let p = Polynomial::from_coefficients(vec![(Monomial::one(), 0)].into_iter());
-        let q = Polynomial::from_coefficients(vec![].into_iter());
+        let p = Polynomial(Multiset::from_iter([(Monomial::one(), 0)]));
+        let q = Polynomial(Multiset::from_iter([]));
         assert_eq!(p, q)
     }
 

@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 #[derive(Debug, Clone)]
-pub struct Multiset<T>
+pub(crate) struct Multiset<T>
 where
     T: Hash + Eq,
 {
@@ -49,7 +49,7 @@ impl<T> Multiset<T>
 where
     T: Eq + Hash,
 {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             elements: Vec::new(),
         }
@@ -61,13 +61,13 @@ where
         }
     }
 
-    pub fn support(&self) -> impl Iterator<Item = &T> {
+    pub(crate) fn support(&self) -> impl Iterator<Item = &T> {
         self.elements
             .iter()
             .filter_map(|(k, v)| if *v > 0 { Some(k) } else { None })
     }
 
-    pub fn amount(&self, element: &T) -> u32 {
+    pub(crate) fn amount(&self, element: &T) -> u32 {
         *self
             .elements
             .iter()
@@ -76,14 +76,14 @@ where
             .unwrap_or(&0)
     }
 
-    pub fn amount_mut_by_ref(&mut self, element: &T) -> Option<&mut u32> {
+    pub(crate) fn amount_mut_by_ref(&mut self, element: &T) -> Option<&mut u32> {
         self.elements
             .iter_mut()
             .filter_map(|(k, v)| if k == element { Some(v) } else { None })
             .next()
     }
 
-    pub fn amount_mut(&mut self, element: T) -> &mut u32 {
+    pub(crate) fn amount_mut(&mut self, element: T) -> &mut u32 {
         let index = self
             .elements
             .iter()
@@ -100,28 +100,28 @@ where
         }
     }
 
-    pub fn amount_iter(&self) -> impl Iterator<Item = (&T, &u32)> {
+    pub(crate) fn amount_iter(&self) -> impl Iterator<Item = (&T, &u32)> {
         self.elements
             .iter()
             .filter_map(|(k, v)| if *v > 0 { Some((k, v)) } else { None })
     }
 
-    pub fn amount_iter_mut(&mut self) -> impl Iterator<Item = (&mut T, &mut u32)> {
+    pub(crate) fn amount_iter_mut(&mut self) -> impl Iterator<Item = (&mut T, &mut u32)> {
         self.elements
             .iter_mut()
             .filter_map(|(k, v)| if *v > 0 { Some((k, v)) } else { None })
     }
 
-    pub fn into_amount_iter(self) -> impl Iterator<Item = (T, u32)> {
+    pub(crate) fn into_amount_iter(self) -> impl Iterator<Item = (T, u32)> {
         self.elements.into_iter()
     }
 
-    pub fn is_multisubset_of(&self, other: &Multiset<T>) -> bool {
+    pub(crate) fn is_multisubset_of(&self, other: &Multiset<T>) -> bool {
         self.support().all(|k| self.amount(k) <= other.amount(k))
     }
 
     #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &T> {
         let mut elements = vec![];
         for (element, amount) in self.amount_iter() {
             elements.extend(
@@ -167,16 +167,8 @@ impl<T> Multiset<T>
 where
     T: Eq + Hash + Clone,
 {
-    pub fn subtract(mut self, other: Self) -> Self {
-        for (e, amount) in self.amount_iter_mut() {
-            *amount = amount.saturating_sub(other.amount(e));
-        }
-
-        self
-    }
-
     #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-    pub fn into_iter(self) -> impl Iterator<Item = T> {
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = T> {
         let mut elements = vec![];
         for (element, amount) in self.into_amount_iter() {
             elements.extend(
@@ -213,17 +205,6 @@ mod test {
         left.extend(right.into_amount_iter());
 
         assert_eq!(left, Multiset::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
-    }
-
-    #[test]
-    fn multiset_subtract() {
-        let left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
-        let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
-        let difference = left.subtract(right);
-
-        assert_eq!(difference.amount(&0), 2);
-        assert_eq!(difference.amount(&1), 0);
-        assert_eq!(difference.amount(&2), 0);
     }
 
     #[test]

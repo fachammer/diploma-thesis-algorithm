@@ -11,11 +11,11 @@ use crate::{
     proof::{Proof, Skeleton},
 };
 
-pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
+pub(crate) fn is_disequality_provable(disequality: &TermDisequality) -> bool {
     search_proof(disequality).is_ok()
 }
 
-pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
+pub(crate) fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
     let polynomial_disequality = PolynomialDisequality::from(disequality.clone());
 
     let proof_attempt = search_proof_as_polynomials(polynomial_disequality);
@@ -99,7 +99,7 @@ fn fill_hole_with_split_proof(
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum ProofInProgress {
+pub(crate) enum ProofInProgress {
     NotStrictlyMonomiallyComparable,
     FoundRoot,
     Hole,
@@ -125,7 +125,7 @@ impl ProofInProgress {
 }
 
 #[derive(Clone, Debug)]
-pub enum ProofAttempt {
+pub(crate) enum ProofAttempt {
     NotStrictlyMonomiallyComparable,
     FoundRoot,
     SuccessorNonZero,
@@ -351,13 +351,13 @@ mod test {
 
     prop_compose! {
         fn monomial(max_exponent: u32, max_factors: usize)(exponents in prop::collection::vec((0u32..100, 0..=max_exponent), 0..=max_factors)) -> Monomial {
-            Monomial::from_exponents(exponents)
+            Monomial(Multiset::from_iter(exponents))
         }
     }
 
     prop_compose! {
         fn polynomial(max_exponent: u32, max_factors: usize, max_coefficient: u32, max_coefficients: usize)(coefficients in prop::collection::vec((monomial(max_exponent, max_factors), 0..=max_coefficient), 0..=max_coefficients)) -> Polynomial {
-            Polynomial::from_coefficients(coefficients)
+            Polynomial(Multiset::from_iter(coefficients))
         }
     }
 
