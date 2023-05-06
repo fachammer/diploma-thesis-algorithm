@@ -21,40 +21,45 @@ pub mod v2 {
     pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, String> {
         let left_poly = Polynomial::from(left.clone());
         let right_poly = Polynomial::from(right.clone());
-        let conclusion = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
         let right_free_variables = right.free_variables();
         let left_free_variables = left.free_variables();
         let free_variables = left_free_variables.union(&right_free_variables);
-
         let mut free_variables: Vec<u32> = free_variables.cloned().collect();
+
+        let PolynomialDisequality {
+            left: left_poly,
+            right: right_poly,
+        } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
+
         free_variables.sort();
 
-        let mut proof = Box::new(ProofInProgress::Hole {
-            conclusion,
-            next_variables: free_variables.iter().copied().cycle(),
-        });
-        let mut proof_holes = VecDeque::from_iter([proof.as_mut()]);
+        let mut proof = Box::new(ProofInProgress::Hole);
+        let mut proof_holes = VecDeque::from_iter([(
+            proof.as_mut(),
+            left_poly,
+            right_poly,
+            free_variables.iter().copied().cycle(),
+        )]);
 
-        while let Some(hole) = proof_holes.pop_front() {
-            let (conclusion, next_variables) = hole.hole().unwrap();
+        while let Some((hole, left_poly, right_poly, next_variables)) = proof_holes.pop_front() {
             let PolynomialDisequality {
                 left: left_poly,
                 right: right_poly,
-            } = conclusion;
+            } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
 
-            if !left_poly.is_strictly_monomially_comparable_to(right_poly) {
+            if !left_poly.is_strictly_monomially_comparable_to(&right_poly) {
                 *hole = ProofInProgress::NotStrictlyMonomiallyComparable;
                 continue;
             }
 
-            if left_poly == &0.into() {
+            if left_poly == 0.into() {
                 *hole = if right_poly.coefficient(&Monomial::one()) > 0 {
                     ProofInProgress::SuccessorNonZero
                 } else {
                     ProofInProgress::FoundRoot
                 };
                 continue;
-            } else if right_poly == &0.into() {
+            } else if right_poly == 0.into() {
                 *hole = if left_poly.coefficient(&Monomial::one()) > 0 {
                     ProofInProgress::SuccessorNonZero
                 } else {
@@ -66,29 +71,24 @@ pub mod v2 {
             let mut next_variables = next_variables.clone();
             let variable = next_variables.next().unwrap();
 
-            let zero_conclusion = conclusion.at_variable_zero(variable).reduce();
-            let zero_proof = Box::new(ProofInProgress::Hole {
-                conclusion: zero_conclusion,
-                next_variables: next_variables.clone(),
-            });
-            let successor_conclusion = PolynomialDisequality {
-                left: left_poly.clone(),
-                right: right_poly.clone(),
-            }
-            .into_at_variable_plus_one(variable)
-            .reduce();
-            let successor_proof = Box::new(ProofInProgress::Hole {
-                conclusion: successor_conclusion,
-                next_variables: next_variables.clone(),
-            });
             *hole = ProofInProgress::Split {
                 variable,
-                zero_proof,
-                successor_proof,
+                zero_proof: Box::new(ProofInProgress::Hole),
+                successor_proof: Box::new(ProofInProgress::Hole),
             };
             let (zero_proof, successor_proof) = hole.proofs_mut().unwrap();
-            proof_holes.push_back(zero_proof);
-            proof_holes.push_back(successor_proof);
+            proof_holes.push_back((
+                zero_proof,
+                left_poly.at_variable_zero(variable),
+                right_poly.at_variable_zero(variable),
+                next_variables.clone(),
+            ));
+            proof_holes.push_back((
+                successor_proof,
+                left_poly.into_at_variable_plus_one(variable),
+                right_poly.into_at_variable_plus_one(variable),
+                next_variables,
+            ));
         }
 
         let proof_attempt = ProofAttempt::try_from(*proof).expect("proof has no holes");
@@ -101,22 +101,19 @@ pub mod v2 {
     }
 
     #[derive(Clone)]
-    pub enum ProofInProgress<I: Iterator<Item = u32>> {
+    pub enum ProofInProgress {
         NotStrictlyMonomiallyComparable,
         FoundRoot,
-        Hole {
-            conclusion: PolynomialDisequality,
-            next_variables: I,
-        },
+        Hole,
         SuccessorNonZero,
         Split {
             variable: u32,
-            zero_proof: Box<ProofInProgress<I>>,
-            successor_proof: Box<ProofInProgress<I>>,
+            zero_proof: Box<ProofInProgress>,
+            successor_proof: Box<ProofInProgress>,
         },
     }
 
-    impl<I: Iterator<Item = u32>> ProofInProgress<I> {
+    impl ProofInProgress {
         fn proofs_mut(&mut self) -> Option<(&mut Self, &mut Self)> {
             match self {
                 ProofInProgress::Split {
@@ -124,16 +121,6 @@ pub mod v2 {
                     successor_proof,
                     ..
                 } => Some((zero_proof, successor_proof)),
-                _ => None,
-            }
-        }
-
-        fn hole(&self) -> Option<(&PolynomialDisequality, &I)> {
-            match self {
-                ProofInProgress::Hole {
-                    conclusion,
-                    next_variables,
-                } => Some((conclusion, next_variables)),
                 _ => None,
             }
         }
@@ -151,10 +138,10 @@ pub mod v2 {
         },
     }
 
-    impl<I: Iterator<Item = u32>> TryFrom<ProofInProgress<I>> for ProofAttempt {
+    impl TryFrom<ProofInProgress> for ProofAttempt {
         type Error = String;
 
-        fn try_from(value: ProofInProgress<I>) -> Result<Self, Self::Error> {
+        fn try_from(value: ProofInProgress) -> Result<Self, Self::Error> {
             match value {
                 ProofInProgress::NotStrictlyMonomiallyComparable => {
                     Ok(Self::NotStrictlyMonomiallyComparable)

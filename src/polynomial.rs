@@ -43,9 +43,9 @@ impl Monomial {
         self.0.contains(variable)
     }
 
-    fn without_variable(self, variable: u32) -> Self {
-        let variable_monomial = Monomial::from_variable(variable, self.exponent(&variable));
-        Self(self.0.subtract(variable_monomial.0))
+    fn without_variable(mut self, variable: u32) -> Self {
+        self.0.remove_all(&variable);
+        self
     }
 }
 
@@ -160,13 +160,13 @@ impl Polynomial {
     }
 
     pub fn at_variable_zero(&self, variable: u32) -> Self {
-        let mut monomials = Vec::with_capacity(self.0.support().count());
+        let mut monomials = Multiset::with_capacity(self.0.support().count());
         for (monomial, amount) in self.0.amount_iter() {
             if !monomial.has_variable(&variable) {
-                monomials.push((monomial.clone(), *amount));
+                *monomials.amount_mut(monomial.clone()) = *amount;
             }
         }
-        Self::from(Multiset::from_iter(monomials.into_iter()))
+        Self(monomials)
     }
 
     fn power_of_variable_plus_one(variable: u32, exponent: u32) -> Vec<(Monomial, u32)> {
@@ -200,7 +200,7 @@ impl Polynomial {
     }
 
     pub fn into_at_variable_plus_one(self, variable: u32) -> Self {
-        let mut monomials = Vec::with_capacity(10 * self.0.support().count());
+        let mut monomials = Multiset::with_capacity(5 * self.0.support().count());
         for (monomial, amount) in self.0.into_amount_iter() {
             let variable_exponent = monomial.exponent(&variable);
             if variable_exponent > 0 {
@@ -212,10 +212,10 @@ impl Polynomial {
                 }
                 monomials.extend(binomials);
             } else {
-                monomials.push((monomial, amount));
+                *monomials.amount_mut(monomial) += amount;
             }
         }
-        Self::from_coefficients(monomials.into_iter())
+        Self(monomials)
     }
 }
 

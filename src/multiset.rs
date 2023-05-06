@@ -55,6 +55,12 @@ where
         }
     }
 
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            elements: Vec::with_capacity(capacity),
+        }
+    }
+
     pub fn support(&self) -> impl Iterator<Item = &T> {
         self.elements
             .iter()
@@ -88,8 +94,9 @@ where
         if let Some(index) = index {
             &mut self.elements[index].1
         } else {
+            let length = self.elements.len();
             self.elements.push((element, 0));
-            &mut self.elements.last_mut().expect("just pushed an element").1
+            &mut self.elements[length].1
         }
     }
 
@@ -135,6 +142,15 @@ where
             }
         }
         false
+    }
+
+    pub(crate) fn remove_all(&mut self, element: &T) {
+        for i in 0..self.elements.len() {
+            if &self.elements[i].0 == element {
+                self.elements.swap_remove(i);
+                return;
+            }
+        }
     }
 }
 
