@@ -1,6 +1,11 @@
 use std::{collections::HashSet, fmt::Display};
 
-use crate::{multiset::Multiset, polynomial::Polynomial, substitution::Substitution, term::Term};
+use crate::{
+    multiset::Multiset,
+    polynomial::{Monomial, Polynomial},
+    substitution::Substitution,
+    term::Term,
+};
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct PolynomialDisequality {
@@ -65,6 +70,20 @@ impl PolynomialDisequality {
             left: self.left.into_at_variable_plus_one(variable),
             right: self.right.into_at_variable_plus_one(variable),
         }
+    }
+
+    pub fn is_strictly_monomially_comparable(&self) -> bool {
+        self.left.is_strictly_monomially_comparable_to(&self.right)
+    }
+
+    pub fn has_zero_root(&self) -> bool {
+        self.left.coefficient(&Monomial::one()) == 0
+            && self.right.coefficient(&Monomial::one()) == 0
+    }
+
+    pub(crate) fn is_in_successor_non_zero_form(&self) -> bool {
+        self.left.coefficient(&Monomial::one()) > 0 && self.right == 0.into()
+            || self.right.coefficient(&Monomial::one()) > 0 && self.left == 0.into()
     }
 }
 

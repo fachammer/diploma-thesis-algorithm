@@ -9,7 +9,7 @@ pub mod v2 {
 
     use crate::{
         disequality::{PolynomialDisequality, TermDisequality},
-        polynomial::{Monomial, Polynomial},
+        polynomial::Polynomial,
         proof::v2::{Proof, Skeleton},
         term::Term,
     };
@@ -18,100 +18,84 @@ pub mod v2 {
         search_proof(left, right).is_ok()
     }
 
-    pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, String> {
+    pub fn search_proof(left: &Term, right: &Term) -> Result<Proof, ProofAttempt> {
         let left_poly = Polynomial::from(left.clone());
         let right_poly = Polynomial::from(right.clone());
-        let right_free_variables = right.free_variables();
-        let left_free_variables = left.free_variables();
-        let free_variables = left_free_variables.union(&right_free_variables);
-        let mut free_variables: Vec<u32> = free_variables.cloned().collect();
 
-        let PolynomialDisequality {
+        let disequality = PolynomialDisequality {
             left: left_poly,
             right: right_poly,
-        } = PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
-
-        free_variables.sort();
+        };
 
         let mut proof = Box::new(ProofInProgress::Hole);
-        let mut proof_holes = VecDeque::from_iter([(
-            proof.as_mut(),
-            left_poly,
-            right_poly,
-            *free_variables.iter().max().unwrap_or(&0),
-        )]);
+        let mut proof_holes = VecDeque::from_iter([(proof.as_mut(), disequality, u32::MAX)]);
 
-        while let Some((hole, left_poly, right_poly, previous_variable)) = proof_holes.pop_front() {
-            let disequality =
-                PolynomialDisequality::from_polynomials_reduced(left_poly, right_poly);
-
-            if !disequality
-                .left
-                .is_strictly_monomially_comparable_to(&disequality.right)
-            {
-                *hole = ProofInProgress::NotStrictlyMonomiallyComparable;
+        while let Some((hole, disequality, previous_split_variable)) = proof_holes.pop_front() {
+            let disequality = disequality.reduce();
+            if let Some(proof) = find_non_split_proof(&disequality) {
+                *hole = proof;
                 continue;
             }
 
-            if disequality.left == 0.into() {
-                *hole = if disequality.right.coefficient(&Monomial::one()) > 0 {
-                    ProofInProgress::SuccessorNonZero
-                } else {
-                    ProofInProgress::FoundRoot
-                };
-                continue;
-            } else if disequality.right == 0.into() {
-                *hole = if disequality.left.coefficient(&Monomial::one()) > 0 {
-                    ProofInProgress::SuccessorNonZero
-                } else {
-                    ProofInProgress::FoundRoot
-                };
-                continue;
-            }
+            let split_variable = next_split_variable(&disequality, previous_split_variable);
+            let (zero_proof, successor_proof) = split_at_hole(hole, split_variable);
+            let zero_disequality = disequality.at_variable_zero(split_variable);
+            proof_holes.push_back((zero_proof, zero_disequality, split_variable));
 
-            let variable = {
-                let mut variables: Vec<u32> = disequality.variables().copied().collect();
-                variables.sort();
-
-                *variables
-                    .iter()
-                    .find(|&&v| v > previous_variable)
-                    .unwrap_or_else(|| {
-                        disequality
-                            .variables()
-                            .next()
-                            .expect("must exist, otherwise previous code would have returned")
-                    })
-            };
-            *hole = ProofInProgress::Split {
-                variable,
-                zero_proof: Box::new(ProofInProgress::Hole),
-                successor_proof: Box::new(ProofInProgress::Hole),
-            };
-            let (zero_proof, successor_proof) = hole
-                .proofs_mut()
-                .expect("this is something since we just set the hole as a split");
-            proof_holes.push_back((
-                zero_proof,
-                disequality.left.at_variable_zero(variable),
-                disequality.right.at_variable_zero(variable),
-                variable,
-            ));
-            proof_holes.push_back((
-                successor_proof,
-                disequality.left.into_at_variable_plus_one(variable),
-                disequality.right.into_at_variable_plus_one(variable),
-                variable,
-            ));
+            let successor_disequality = disequality.into_at_variable_plus_one(split_variable);
+            proof_holes.push_back((successor_proof, successor_disequality, split_variable));
         }
 
-        let proof_attempt = ProofAttempt::try_from(*proof).expect("proof has no holes");
+        let proof_attempt = ProofAttempt::try_from(*proof).expect("proof attempt has no holes");
         let skeleton = Skeleton::try_from(proof_attempt)?;
         let conclusion = TermDisequality::from_terms(left.clone(), right.clone());
         Ok(Proof {
             conclusion,
             skeleton,
         })
+    }
+
+    fn split_at_hole(
+        hole: &mut ProofInProgress,
+        split_variable: u32,
+    ) -> (&mut ProofInProgress, &mut ProofInProgress) {
+        *hole = ProofInProgress::Split {
+            variable: split_variable,
+            zero_proof: Box::new(ProofInProgress::Hole),
+            successor_proof: Box::new(ProofInProgress::Hole),
+        };
+
+        let (zero_proof, successor_proof) = hole
+            .proofs_mut()
+            .expect("this is not None since we just set the hole as a split");
+        (zero_proof, successor_proof)
+    }
+
+    fn next_split_variable(disequality: &PolynomialDisequality, previous_variable: u32) -> u32 {
+        let mut variables: Vec<u32> = disequality.variables().copied().collect();
+        variables.sort();
+
+        *variables
+            .iter()
+            .find(|&&v| v > previous_variable)
+            .unwrap_or_else(|| {
+                disequality
+                    .variables()
+                    .next()
+                    .expect("must exist, otherwise previous code would have returned")
+            })
+    }
+
+    fn find_non_split_proof(disequality: &PolynomialDisequality) -> Option<ProofInProgress> {
+        if !disequality.is_strictly_monomially_comparable() {
+            Some(ProofInProgress::NotStrictlyMonomiallyComparable)
+        } else if disequality.has_zero_root() {
+            Some(ProofInProgress::FoundRoot)
+        } else if disequality.is_in_successor_non_zero_form() {
+            Some(ProofInProgress::SuccessorNonZero)
+        } else {
+            None
+        }
     }
 
     #[derive(Clone)]
@@ -183,12 +167,12 @@ pub mod v2 {
     }
 
     impl TryFrom<ProofAttempt> for Skeleton {
-        type Error = String;
+        type Error = ProofAttempt;
 
         fn try_from(value: ProofAttempt) -> Result<Self, Self::Error> {
             match value {
                 ProofAttempt::NotStrictlyMonomiallyComparable | ProofAttempt::FoundRoot => {
-                    Err(String::from("error"))
+                    Err(value)
                 }
                 ProofAttempt::SuccessorNonZero => Ok(Skeleton::SuccessorNonZero),
                 ProofAttempt::Split {
@@ -204,7 +188,38 @@ pub mod v2 {
                         zero_skeleton: zero_skeleton.into(),
                         successor_skeleton: successor_skeleton.into(),
                     }),
-                    _ => Err(String::from("error")),
+                    (Ok(zero_skeleton), Err(successor_attempt)) => Err(ProofAttempt::Split {
+                        variable,
+                        zero_proof: Box::new(ProofAttempt::from(zero_skeleton)),
+                        successor_proof: Box::new(successor_attempt),
+                    }),
+                    (Err(zero_attempt), Ok(successor_skeleton)) => Err(ProofAttempt::Split {
+                        variable,
+                        zero_proof: Box::new(zero_attempt),
+                        successor_proof: Box::new(ProofAttempt::from(successor_skeleton)),
+                    }),
+                    (Err(zero_attempt), Err(sucessor_attempt)) => Err(ProofAttempt::Split {
+                        variable,
+                        zero_proof: Box::new(zero_attempt),
+                        successor_proof: Box::new(sucessor_attempt),
+                    }),
+                },
+            }
+        }
+    }
+
+    impl From<Skeleton> for ProofAttempt {
+        fn from(skeleton: Skeleton) -> Self {
+            match skeleton {
+                Skeleton::SuccessorNonZero => ProofAttempt::SuccessorNonZero,
+                Skeleton::Split {
+                    variable,
+                    zero_skeleton,
+                    successor_skeleton,
+                } => ProofAttempt::Split {
+                    variable,
+                    zero_proof: Box::new(ProofAttempt::from(*zero_skeleton)),
+                    successor_proof: Box::new(ProofAttempt::from(*successor_skeleton)),
                 },
             }
         }
