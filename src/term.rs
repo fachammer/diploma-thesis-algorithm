@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{polynomial::Polynomial, substitution::Substitution};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub(crate) enum Term {
+pub enum Term {
     Variable(u32),
     Zero,
     S(Box<Term>),

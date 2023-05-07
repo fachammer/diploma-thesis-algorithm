@@ -99,7 +99,7 @@ pub struct TermDisequality {
 }
 
 impl TermDisequality {
-    pub(crate) fn from_terms<L: Into<Term>, R: Into<Term>>(left: L, right: R) -> Self {
+    pub fn from_terms<L: Into<Term>, R: Into<Term>>(left: L, right: R) -> Self {
         TermDisequality {
             left: left.into(),
             right: right.into(),
