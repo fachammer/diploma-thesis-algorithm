@@ -9,15 +9,12 @@
 
   <body>
     <script type="module">
-      import init, { add } from '../pkg/thesis_algorithm.js';
+      import init, { search } from '../pkg/thesis_algorithm.js';
 
       async function run() {
         await init();
 
-        const result = add(1, 2);
-        console.log(`1 + 2 = ${result}`);
-        if (result !== 3)
-          throw new Error("wasm addition doesn't work!");
+        console.log(search());
       }
 
       run();

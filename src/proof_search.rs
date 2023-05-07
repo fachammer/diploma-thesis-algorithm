@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     multiset::Multiset,
     polynomial::{Monomial, Polynomial},
@@ -124,7 +126,7 @@ impl ProofInProgress {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ProofAttempt {
     NotStrictlyMonomiallyComparable,
     FoundRoot,

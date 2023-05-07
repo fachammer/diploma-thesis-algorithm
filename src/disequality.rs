@@ -1,5 +1,7 @@
 use std::{collections::HashSet, fmt::Display};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     multiset::Multiset,
     polynomial::{Monomial, Polynomial},
@@ -92,7 +94,7 @@ impl PolynomialDisequality {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TermDisequality {
     left: Term,
     right: Term,

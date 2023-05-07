@@ -6,6 +6,9 @@ pub mod proof_search;
 mod substitution;
 mod term;
 
+use disequality::TermDisequality;
+use proof_search::search_proof;
+use term::Term;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -15,6 +18,12 @@ pub fn greet() {
 }
 
 #[wasm_bindgen]
-pub fn add(left: u32, right: u32) -> u32 {
-    left + right
+pub fn search() -> Result<JsValue, JsValue> {
+    match search_proof(&TermDisequality::from_terms(
+        Term::Mul(Term::S(Term::Zero.into()).into(), Term::Variable(0).into()),
+        Term::S(Term::Zero.into()),
+    )) {
+        Ok(proof) => Ok(serde_wasm_bindgen::to_value(&proof)?),
+        Err(attempt) => Err(serde_wasm_bindgen::to_value(&attempt)?),
+    }
 }

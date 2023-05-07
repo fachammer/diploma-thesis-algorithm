@@ -1,11 +1,13 @@
 use std::fmt::Display;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     disequality::PolynomialDisequality, disequality::TermDisequality, polynomial::Polynomial,
     substitution::Substitution, term::Term,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) enum Skeleton {
     SuccessorNonZero,
     Split {
@@ -14,7 +16,7 @@ pub(crate) enum Skeleton {
         successor_skeleton: Box<Skeleton>,
     },
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proof {
     pub(crate) skeleton: Skeleton,
     pub(crate) conclusion: TermDisequality,
