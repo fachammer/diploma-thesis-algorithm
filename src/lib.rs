@@ -6,12 +6,15 @@ pub mod proof_search;
 mod substitution;
 mod term;
 
-extern "C" {
-    pub fn alert(ptr: *const u8, length: usize);
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(start)]
+pub fn greet() {
+    let s = "Hello, world";
+    web_sys::console::log_1(&JsValue::from_str(s));
 }
 
-#[no_mangle]
-pub extern "C" fn greet() {
-    let s = "Hellow, world";
-    unsafe { alert(s.as_ptr(), s.len()) };
+#[wasm_bindgen]
+pub fn add(left: u32, right: u32) -> u32 {
+    left + right
 }

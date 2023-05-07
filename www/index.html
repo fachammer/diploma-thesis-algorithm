@@ -8,38 +8,19 @@
   </head>
 
   <body>
-    <script>
-      async function setup() {
-      const imports = {
-          env: {
-            alert: (ptr, len) => {
-              window.alert(getStringFromWasm0(ptr, len))
-            }
-          }
-        }
-        let wasmPromise = WebAssembly.instantiateStreaming(fetch("../target/wasm32-unknown-unknown/debug/thesis_algorithm.wasm"), imports);
-        let wasm;
-        const cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
-        cachedTextDecoder.decode();
+    <script type="module">
+      import init, { add } from '../pkg/thesis_algorithm.js';
 
-        let cachedUint8Memory0 = new Uint8Array();
+      async function run() {
+        await init();
 
-        function getUint8Memory0() {
-            if (cachedUint8Memory0.byteLength === 0) {
-                cachedUint8Memory0 = new Uint8Array(wasm.memory.buffer);
-            }
-            return cachedUint8Memory0;
-        }
-
-        function getStringFromWasm0(ptr, len) {
-          return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
-        }
-
-        const wasmModule = await wasmPromise;
-        wasm = wasmModule.instance.exports;
-        wasm.greet();
+        const result = add(1, 2);
+        console.log(`1 + 2 = ${result}`);
+        if (result !== 3)
+          throw new Error("wasm addition doesn't work!");
       }
-      setup();
+
+      run();
     </script>
   </body>
 
