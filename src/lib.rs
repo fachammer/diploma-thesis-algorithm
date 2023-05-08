@@ -82,10 +82,57 @@ fn oninput(_event: InputEvent) {
 }
 
 impl FromStr for Term {
-    type Err = ();
+    type Err = InvalidCharacter;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+        TermParser::parse(s)
+    }
+}
+
+enum TermToken {
+    Variable { name: char },
+    Whitespace,
+    LeftParenthesis,
+    RightParenthesis,
+    Zero,
+    Successor,
+    Plus,
+    Star,
+}
+
+#[derive(Debug)]
+pub struct InvalidCharacter(char);
+
+fn tokens(input: &str) -> Result<impl Iterator<Item = TermToken> + '_, InvalidCharacter> {
+    let mut tokens = Vec::with_capacity(input.len());
+    for c in input.chars() {
+        tokens.push(match c {
+            'a'..='z' => TermToken::Variable { name: c },
+            '(' => TermToken::LeftParenthesis,
+            ')' => TermToken::RightParenthesis,
+            '0' => TermToken::Zero,
+            'S' => TermToken::Successor,
+            '+' => TermToken::Plus,
+            '*' => TermToken::Star,
+            c if c.is_whitespace() => TermToken::Whitespace,
+            c => return Err(InvalidCharacter(c)),
+        });
+    }
+    Ok(tokens.into_iter())
+}
+
+struct TermParser<'a> {
+    input: &'a str,
+    index: usize,
+}
+
+impl<'a> TermParser<'a> {
+    fn parse(input: &'a str) -> Result<Term, InvalidCharacter> {
+        let mut parser = Self { input, index: 0 };
+
+        let tokens = tokens(input)?;
+
+        Ok(Term::Zero)
     }
 }
 
