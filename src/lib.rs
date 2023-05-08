@@ -46,7 +46,8 @@ fn oninput(_event: InputEvent) {
     let left_value = left_input().value();
     let right_value = right_input().value();
 
-    console::log_3(
+    console::log_4(
+        &"as strings: ".into(),
         &left_value.as_str().into(),
         &"≠".into(),
         &right_value.as_str().into(),
@@ -55,20 +56,27 @@ fn oninput(_event: InputEvent) {
     let left: Result<Term, _> = left_value.parse();
     let right: Result<Term, _> = right_value.parse();
 
-    let left = left.expect("term must be valid");
-    let right = right.expect("term must be valid");
+    let left = left.expect("left term must be valid");
+    let right = right.expect("right term must be valid");
+
+    console::log_4(
+        &"as terms: ".into(),
+        &serde_wasm_bindgen::to_value(&left).unwrap(),
+        &"≠".into(),
+        &serde_wasm_bindgen::to_value(&right).unwrap(),
+    );
 
     let disequality = TermDisequality::from_terms(left, right);
 
     match search_proof(&disequality) {
         Ok(proof) => {
             let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
-            console::log_1(&proof)
+            console::log_2(&"found proof: ".into(), &proof)
         }
         Err(proof_attempt) => {
             let proof_attempt =
                 serde_wasm_bindgen::to_value(&proof_attempt).expect("serialize must succeed");
-            console::log_1(&proof_attempt)
+            console::log_2(&"proof attempt: ".into(), &proof_attempt)
         }
     }
 }
