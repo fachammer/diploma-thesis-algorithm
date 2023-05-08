@@ -10,31 +10,56 @@ use disequality::TermDisequality;
 use proof_search::search_proof;
 use term::Term;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, HtmlElement};
+use web_sys::{console, Document, HtmlInputElement, InputEvent};
+
+fn unchecked_document() -> Document {
+    let window = web_sys::window().expect("window must exist");
+    window.document().expect("document must exist")
+}
+
+fn unchecked_input_by_id(id: &str) -> HtmlInputElement {
+    unchecked_document()
+        .get_element_by_id(id)
+        .unwrap_or_else(|| {
+            panic!(
+                "{}",
+                format_args!("element with id '{id}' must exist")
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            )
+        })
+        .unchecked_into()
+}
+
+fn left_input() -> HtmlInputElement {
+    unchecked_input_by_id("left-term")
+}
+
+fn right_input() -> HtmlInputElement {
+    unchecked_input_by_id("right-term")
+}
+
+fn oninput(event: InputEvent) {
+    let left_value = left_input().value();
+    let rigth_value = right_input().value();
+
+    console::log_3(&left_value.into(), &"≠".into(), &rigth_value.into())
+}
 
 #[wasm_bindgen(start)]
 pub fn main() {
-    let window = web_sys::window().expect("window must exist");
-    let document = window.document().expect("document must exist");
-    let left_input: HtmlElement = document
-        .get_element_by_id("left-term")
-        .expect("left-term must exist")
-        .unchecked_into();
-    let right_input: HtmlElement = document
-        .get_element_by_id("right-term")
-        .expect("right-term must exist")
-        .unchecked_into();
-    let left_input_on_change: Closure<dyn FnMut()> =
-        Closure::wrap(Box::new(|| console::log_1(&"on left-input change".into())));
+    let left_input = left_input();
+    let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
-    let right_input_on_change: Closure<dyn FnMut()> =
-        Closure::wrap(Box::new(|| console::log_1(&"on right-input change".into())));
+    let right_input = right_input();
+    let right_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
-    web_sys::console::log_1(&"main ended".into());
+    console::log_1(&"main ended".into());
 }
 
 #[wasm_bindgen]
