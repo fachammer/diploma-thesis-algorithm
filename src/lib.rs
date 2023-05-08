@@ -6,6 +6,8 @@ pub mod proof_search;
 mod substitution;
 mod term;
 
+use std::str::FromStr;
+
 use disequality::TermDisequality;
 use proof_search::search_proof;
 use term::Term;
@@ -40,15 +42,49 @@ fn right_input() -> HtmlInputElement {
     unchecked_input_by_id("right-term")
 }
 
-fn oninput(event: InputEvent) {
+fn oninput(_event: InputEvent) {
     let left_value = left_input().value();
-    let rigth_value = right_input().value();
+    let right_value = right_input().value();
 
-    console::log_3(&left_value.into(), &"≠".into(), &rigth_value.into())
+    console::log_3(
+        &left_value.as_str().into(),
+        &"≠".into(),
+        &right_value.as_str().into(),
+    );
+
+    let left: Result<Term, _> = left_value.parse();
+    let right: Result<Term, _> = right_value.parse();
+
+    let left = left.expect("term must be valid");
+    let right = right.expect("term must be valid");
+
+    let disequality = TermDisequality::from_terms(left, right);
+
+    match search_proof(&disequality) {
+        Ok(proof) => {
+            let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
+            console::log_1(&proof)
+        }
+        Err(proof_attempt) => {
+            let proof_attempt =
+                serde_wasm_bindgen::to_value(&proof_attempt).expect("serialize must succeed");
+            console::log_1(&proof_attempt)
+        }
+    }
+}
+
+impl FromStr for Term {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!()
+    }
 }
 
 #[wasm_bindgen(start)]
 pub fn main() {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
     let left_input = left_input();
     let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
