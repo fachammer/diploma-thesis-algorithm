@@ -2,7 +2,7 @@ use disequality::TermDisequality;
 use proof_search::search_proof;
 use term::Term;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Text};
+use web_sys::{console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node};
 
 use crate::{disequality, proof_search, term};
 
