@@ -131,7 +131,22 @@ impl From<Term> for Node {
 
                 node.append_child(&unchecked_document().create_text_node("S").into())
                     .expect("append child must work");
-                node.append_child(&inner_node)
+
+                let list = unchecked_document()
+                    .create_element("ul")
+                    .expect("create element must work");
+
+                let inner_item = unchecked_document()
+                    .create_element("li")
+                    .expect("create element must work");
+                inner_item
+                    .append_child(&inner_node)
+                    .expect("append child must work");
+
+                list.append_child(&inner_item)
+                    .expect("append child must work");
+
+                node.append_child(&list.into())
                     .expect("append child must work");
 
                 node.into()
