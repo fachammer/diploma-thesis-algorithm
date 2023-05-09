@@ -2,7 +2,7 @@ use disequality::TermDisequality;
 use proof_search::search_proof;
 use term::Term;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node};
+use web_sys::{console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Text};
 
 use crate::{disequality, proof_search, term};
 
@@ -113,6 +113,18 @@ fn render(left_value: String, right_value: String) {
     }
 }
 
+// TODO: put this function on Document via trait
+fn create_element_unchecked(element: &str) -> Element {
+    unchecked_document()
+        .create_element(element)
+        .expect("create element must work")
+}
+
+// TODO: put this function on Node via trait
+fn append_child_unchecked(parent: &Node, child: &Node) -> Node {
+    parent.append_child(child).expect("append child must work")
+}
+
 impl From<Term> for Node {
     fn from(term: Term) -> Self {
         match term {
@@ -125,29 +137,16 @@ impl From<Term> for Node {
             Term::Zero => unchecked_document().create_text_node("0").into(),
             Term::S(inner) => {
                 let inner_node = Node::from(*inner);
-                let node = unchecked_document()
-                    .create_element("span")
-                    .expect("create element must work");
+                let node = create_element_unchecked("span");
 
-                node.append_child(&unchecked_document().create_text_node("S").into())
-                    .expect("append child must work");
+                append_child_unchecked(&node, &unchecked_document().create_text_node("S").into());
 
-                let list = unchecked_document()
-                    .create_element("ul")
-                    .expect("create element must work");
+                let list = create_element_unchecked("ul");
 
-                let inner_item = unchecked_document()
-                    .create_element("li")
-                    .expect("create element must work");
-                inner_item
-                    .append_child(&inner_node)
-                    .expect("append child must work");
-
-                list.append_child(&inner_item)
-                    .expect("append child must work");
-
-                node.append_child(&list.into())
-                    .expect("append child must work");
+                let inner_item = create_element_unchecked("li");
+                append_child_unchecked(&inner_item, &inner_node);
+                append_child_unchecked(&list, &inner_item);
+                append_child_unchecked(&node, &list);
 
                 node.into()
             }
