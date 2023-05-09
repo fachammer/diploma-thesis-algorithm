@@ -136,39 +136,59 @@ impl From<Term> for Node {
                 .into(),
             Term::Zero => unchecked_document().create_text_node("0").into(),
             Term::S(inner) => {
-                let inner_node = Node::from(*inner);
                 let node = create_element_unchecked("span");
-
                 append_child_unchecked(&node, &unchecked_document().create_text_node("S"));
 
                 let list = create_element_unchecked("ul");
+                append_child_unchecked(&node, &list);
 
                 let inner_item = create_element_unchecked("li");
-                append_child_unchecked(&inner_item, &inner_node);
                 append_child_unchecked(&list, &inner_item);
-                append_child_unchecked(&node, &list);
+
+                let inner_node = Node::from(*inner);
+                append_child_unchecked(&inner_item, &inner_node);
 
                 node.into()
             }
             Term::Add(left, right) => {
-                let left_node = Node::from(*left);
-                let right_node = Node::from(*right);
                 let node = create_element_unchecked("span");
-
-                append_child_unchecked(&node, &left_node);
                 append_child_unchecked(&node, &unchecked_document().create_text_node("+"));
-                append_child_unchecked(&node, &right_node);
+
+                let list = create_element_unchecked("ul");
+                append_child_unchecked(&node, &list);
+
+                let left_item = create_element_unchecked("li");
+                append_child_unchecked(&list, &left_item);
+
+                let left_node = Node::from(*left);
+                append_child_unchecked(&left_item, &left_node);
+
+                let right_item = create_element_unchecked("li");
+                append_child_unchecked(&list, &right_item);
+
+                let right_node = Node::from(*right);
+                append_child_unchecked(&right_item, &right_node);
 
                 node.into()
             }
             Term::Mul(left, right) => {
-                let left_node = Node::from(*left);
-                let right_node = Node::from(*right);
                 let node = create_element_unchecked("span");
-
-                append_child_unchecked(&node, &left_node);
                 append_child_unchecked(&node, &unchecked_document().create_text_node("*"));
-                append_child_unchecked(&node, &right_node);
+
+                let list = create_element_unchecked("ul");
+                append_child_unchecked(&node, &list);
+
+                let left_item = create_element_unchecked("li");
+                append_child_unchecked(&list, &left_item);
+
+                let left_node = Node::from(*left);
+                append_child_unchecked(&left_item, &left_node);
+
+                let right_item = create_element_unchecked("li");
+                append_child_unchecked(&list, &right_item);
+
+                let right_node = Node::from(*right);
+                append_child_unchecked(&right_item, &right_node);
 
                 node.into()
             }
