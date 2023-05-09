@@ -9,15 +9,9 @@
 
   <body>
     <script type="module">
-      import init, { search } from '../pkg/thesis_algorithm.js';
+      import init from '../pkg/thesis_algorithm.js';
 
-      async function run() {
-        await init();
-
-        console.log(search());
-      }
-
-      run();
+      init();
     </script>
     <input id="left-term" type="text"/>
     ≠
