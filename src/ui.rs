@@ -139,7 +139,7 @@ impl From<Term> for Node {
                 let inner_node = Node::from(*inner);
                 let node = create_element_unchecked("span");
 
-                append_child_unchecked(&node, &unchecked_document().create_text_node("S").into());
+                append_child_unchecked(&node, &unchecked_document().create_text_node("S"));
 
                 let list = create_element_unchecked("ul");
 
@@ -153,32 +153,22 @@ impl From<Term> for Node {
             Term::Add(left, right) => {
                 let left_node = Node::from(*left);
                 let right_node = Node::from(*right);
-                let node = unchecked_document()
-                    .create_element("span")
-                    .expect("create element must work");
+                let node = create_element_unchecked("span");
 
-                node.append_child(&left_node)
-                    .expect("append child must work");
-                node.append_child(&unchecked_document().create_text_node("+").into())
-                    .expect("append child must work");
-                node.append_child(&right_node)
-                    .expect("append child must work");
+                append_child_unchecked(&node, &left_node);
+                append_child_unchecked(&node, &unchecked_document().create_text_node("+"));
+                append_child_unchecked(&node, &right_node);
 
                 node.into()
             }
             Term::Mul(left, right) => {
                 let left_node = Node::from(*left);
                 let right_node = Node::from(*right);
-                let node = unchecked_document()
-                    .create_element("span")
-                    .expect("create element must work");
+                let node = create_element_unchecked("span");
 
-                node.append_child(&left_node)
-                    .expect("append child must work");
-                node.append_child(&unchecked_document().create_text_node("*").into())
-                    .expect("append child must work");
-                node.append_child(&right_node)
-                    .expect("append child must work");
+                append_child_unchecked(&node, &left_node);
+                append_child_unchecked(&node, &unchecked_document().create_text_node("*"));
+                append_child_unchecked(&node, &right_node);
 
                 node.into()
             }
