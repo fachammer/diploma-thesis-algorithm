@@ -56,17 +56,17 @@ pub(crate) fn setup() {
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
-    display(left_input.value(), right_input.value());
+    render(left_input.value(), right_input.value());
 }
 
 fn oninput(_event: InputEvent) {
     let left_value = left_input().value();
     let right_value = right_input().value();
 
-    display(left_value, right_value);
+    render(left_value, right_value);
 }
 
-fn display(left_value: String, right_value: String) {
+fn render(left_value: String, right_value: String) {
     console::log_4(
         &"as strings: ".into(),
         &left_value.as_str().into(),
