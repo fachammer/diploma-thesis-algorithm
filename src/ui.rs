@@ -113,16 +113,25 @@ fn render(left_value: String, right_value: String) {
     }
 }
 
-// TODO: put this function on Document via trait
-fn create_element_unchecked(element: &str) -> Element {
-    unchecked_document()
-        .create_element(element)
-        .expect("create element must work")
+trait NodeUnchecked {
+    fn append_child_unchecked(&self, child: &Node) -> Node;
 }
 
-// TODO: put this function on Node via trait
-fn append_child_unchecked(parent: &Node, child: &Node) -> Node {
-    parent.append_child(child).expect("append child must work")
+impl NodeUnchecked for Node {
+    fn append_child_unchecked(&self, child: &Node) -> Node {
+        self.append_child(child).expect("append child must work")
+    }
+}
+
+trait DocumentUnchecked {
+    fn create_element_unchecked(&self, element: &str) -> Element;
+}
+
+impl DocumentUnchecked for Document {
+    fn create_element_unchecked(&self, element: &str) -> Element {
+        self.create_element(element)
+            .expect("create element must work")
+    }
 }
 
 struct TermTreeView<'a>(&'a Term);
@@ -138,59 +147,123 @@ impl<'a> From<TermTreeView<'a>> for Node {
                 .into(),
             Term::Zero => unchecked_document().create_text_node("0").into(),
             Term::S(inner) => {
-                let node = create_element_unchecked("span");
-                append_child_unchecked(&node, &unchecked_document().create_text_node("S"));
+                let node = unchecked_document().create_element_unchecked("span");
+                {
+                    let parent: &Node = &node;
+                    let child: &Node = &unchecked_document().create_text_node("S");
+                    parent.append_child_unchecked(child)
+                };
 
-                let list = create_element_unchecked("ul");
-                append_child_unchecked(&node, &list);
+                let list = unchecked_document().create_element_unchecked("ul");
+                {
+                    let parent: &Node = &node;
+                    let child: &Node = &list;
+                    parent.append_child_unchecked(child)
+                };
 
-                let inner_item = create_element_unchecked("li");
-                append_child_unchecked(&list, &inner_item);
+                let inner_item = unchecked_document().create_element_unchecked("li");
+                {
+                    let parent: &Node = &list;
+                    let child: &Node = &inner_item;
+                    parent.append_child_unchecked(child)
+                };
 
                 let inner_node = Node::from(TermTreeView(inner));
-                append_child_unchecked(&inner_item, &inner_node);
+                {
+                    let parent: &Node = &inner_item;
+                    let child = &inner_node;
+                    parent.append_child_unchecked(child)
+                };
 
                 node.into()
             }
             Term::Add(left, right) => {
-                let node = create_element_unchecked("span");
-                append_child_unchecked(&node, &unchecked_document().create_text_node("+"));
+                let node = unchecked_document().create_element_unchecked("span");
+                {
+                    let parent: &Node = &node;
+                    let child: &Node = &unchecked_document().create_text_node("+");
+                    parent.append_child_unchecked(child)
+                };
 
-                let list = create_element_unchecked("ul");
-                append_child_unchecked(&node, &list);
+                let list = unchecked_document().create_element_unchecked("ul");
+                {
+                    let parent: &Node = &node;
+                    let child: &Node = &list;
+                    parent.append_child_unchecked(child)
+                };
 
-                let left_item = create_element_unchecked("li");
-                append_child_unchecked(&list, &left_item);
+                let left_item = unchecked_document().create_element_unchecked("li");
+                {
+                    let parent: &Node = &list;
+                    let child: &Node = &left_item;
+                    parent.append_child_unchecked(child)
+                };
 
                 let left_node = Node::from(TermTreeView(left));
-                append_child_unchecked(&left_item, &left_node);
+                {
+                    let parent: &Node = &left_item;
+                    let child = &left_node;
+                    parent.append_child_unchecked(child)
+                };
 
-                let right_item = create_element_unchecked("li");
-                append_child_unchecked(&list, &right_item);
+                let right_item = unchecked_document().create_element_unchecked("li");
+                {
+                    let parent: &Node = &list;
+                    let child: &Node = &right_item;
+                    parent.append_child_unchecked(child)
+                };
 
                 let right_node = Node::from(TermTreeView(right));
-                append_child_unchecked(&right_item, &right_node);
+                {
+                    let parent: &Node = &right_item;
+                    let child = &right_node;
+                    parent.append_child_unchecked(child)
+                };
 
                 node.into()
             }
             Term::Mul(left, right) => {
-                let node = create_element_unchecked("span");
-                append_child_unchecked(&node, &unchecked_document().create_text_node("*"));
+                let node = unchecked_document().create_element_unchecked("span");
+                {
+                    let parent: &Node = &node;
+                    let child: &Node = &unchecked_document().create_text_node("*");
+                    parent.append_child_unchecked(child)
+                };
 
-                let list = create_element_unchecked("ul");
-                append_child_unchecked(&node, &list);
+                let list = unchecked_document().create_element_unchecked("ul");
+                {
+                    let parent: &Node = &node;
+                    let child: &Node = &list;
+                    parent.append_child_unchecked(child)
+                };
 
-                let left_item = create_element_unchecked("li");
-                append_child_unchecked(&list, &left_item);
+                let left_item = unchecked_document().create_element_unchecked("li");
+                {
+                    let parent: &Node = &list;
+                    let child: &Node = &left_item;
+                    parent.append_child_unchecked(child)
+                };
 
                 let left_node = Node::from(TermTreeView(left));
-                append_child_unchecked(&left_item, &left_node);
+                {
+                    let parent: &Node = &left_item;
+                    let child = &left_node;
+                    parent.append_child_unchecked(child)
+                };
 
-                let right_item = create_element_unchecked("li");
-                append_child_unchecked(&list, &right_item);
+                let right_item = unchecked_document().create_element_unchecked("li");
+                {
+                    let parent: &Node = &list;
+                    let child: &Node = &right_item;
+                    parent.append_child_unchecked(child)
+                };
 
                 let right_node = Node::from(TermTreeView(right));
-                append_child_unchecked(&right_item, &right_node);
+                {
+                    let parent: &Node = &right_item;
+                    let child = &right_node;
+                    parent.append_child_unchecked(child)
+                };
 
                 node.into()
             }
