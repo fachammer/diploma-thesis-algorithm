@@ -6,7 +6,7 @@ use web_sys::{
     console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Window,
 };
 
-use crate::{disequality, proof_search, term};
+use crate::{disequality, polynomial::Polynomial, proof_search, term};
 
 fn unchecked_document() -> Document {
     let window = web_sys::window().expect("window must exist");
@@ -63,6 +63,14 @@ fn render(document: &Document, left_value: String, right_value: String) {
     let right_term_view = document.html_element_by_id_unchecked("right-term-view");
     right_term_view.set_text_content(None);
     right_term_view.append_child_unchecked(&TermTreeView(&right).render(&unchecked_document()));
+
+    let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
+    left_polynomial_view.set_text_content(None);
+    left_polynomial_view.append_child_unchecked(&Polynomial::from(left.clone()).render(document));
+
+    let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
+    right_polynomial_view.set_text_content(None);
+    right_polynomial_view.append_child_unchecked(&Polynomial::from(right.clone()).render(document));
 
     let disequality = TermDisequality::from_terms(left, right);
 
@@ -205,5 +213,11 @@ impl<'a> RenderNode for TermTreeView<'a> {
                 node.into()
             }
         }
+    }
+}
+
+impl RenderNode for Polynomial {
+    fn render(&self, document: &Document) -> Node {
+        document.create_text_node(&format!("{}", self)).into()
     }
 }
