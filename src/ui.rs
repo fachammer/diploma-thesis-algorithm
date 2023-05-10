@@ -89,14 +89,10 @@ fn render(left_value: String, right_value: String) {
 
     let left_display: Element = left_term_display().into();
     left_display.set_text_content(None);
-    left_display
-        .append_child(&Node::from(TermTreeView(&left)))
-        .expect("append child must work");
+    left_display.append_child_unchecked(&Node::from(TermTreeView(&left)));
     let right_display = right_term_display();
     right_display.set_text_content(None);
-    right_display
-        .append_child(&Node::from(TermTreeView(&right)))
-        .expect("append child must work");
+    right_display.append_child_unchecked(&Node::from(TermTreeView(&right)));
 
     let disequality = TermDisequality::from_terms(left, right);
 
