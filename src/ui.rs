@@ -90,12 +90,12 @@ fn render(left_value: String, right_value: String) {
     let left_display: Element = left_term_display().into();
     left_display.set_text_content(None);
     left_display
-        .append_child(&Node::from(left.clone()))
+        .append_child(&Node::from(TermTreeView(&left)))
         .expect("append child must work");
     let right_display = right_term_display();
     right_display.set_text_content(None);
     right_display
-        .append_child(&Node::from(right.clone()))
+        .append_child(&Node::from(TermTreeView(&right)))
         .expect("append child must work");
 
     let disequality = TermDisequality::from_terms(left, right);
@@ -125,13 +125,15 @@ fn append_child_unchecked(parent: &Node, child: &Node) -> Node {
     parent.append_child(child).expect("append child must work")
 }
 
-impl From<Term> for Node {
-    fn from(term: Term) -> Self {
-        match term {
+struct TermTreeView<'a>(&'a Term);
+
+impl<'a> From<TermTreeView<'a>> for Node {
+    fn from(term: TermTreeView<'a>) -> Self {
+        match term.0 {
             Term::Variable(x) => unchecked_document()
                 .create_text_node(&format!(
                     "{}",
-                    char::try_from(x).expect("must be a valid char value")
+                    char::try_from(*x).expect("must be a valid char value")
                 ))
                 .into(),
             Term::Zero => unchecked_document().create_text_node("0").into(),
@@ -145,7 +147,7 @@ impl From<Term> for Node {
                 let inner_item = create_element_unchecked("li");
                 append_child_unchecked(&list, &inner_item);
 
-                let inner_node = Node::from(*inner);
+                let inner_node = Node::from(TermTreeView(inner));
                 append_child_unchecked(&inner_item, &inner_node);
 
                 node.into()
@@ -160,13 +162,13 @@ impl From<Term> for Node {
                 let left_item = create_element_unchecked("li");
                 append_child_unchecked(&list, &left_item);
 
-                let left_node = Node::from(*left);
+                let left_node = Node::from(TermTreeView(left));
                 append_child_unchecked(&left_item, &left_node);
 
                 let right_item = create_element_unchecked("li");
                 append_child_unchecked(&list, &right_item);
 
-                let right_node = Node::from(*right);
+                let right_node = Node::from(TermTreeView(right));
                 append_child_unchecked(&right_item, &right_node);
 
                 node.into()
@@ -181,13 +183,13 @@ impl From<Term> for Node {
                 let left_item = create_element_unchecked("li");
                 append_child_unchecked(&list, &left_item);
 
-                let left_node = Node::from(*left);
+                let left_node = Node::from(TermTreeView(left));
                 append_child_unchecked(&left_item, &left_node);
 
                 let right_item = create_element_unchecked("li");
                 append_child_unchecked(&list, &right_item);
 
-                let right_node = Node::from(*right);
+                let right_node = Node::from(TermTreeView(right));
                 append_child_unchecked(&right_item, &right_node);
 
                 node.into()
