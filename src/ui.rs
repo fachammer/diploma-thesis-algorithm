@@ -2,71 +2,41 @@ use disequality::TermDisequality;
 use proof_search::search_proof;
 use term::Term;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node};
+use web_sys::{
+    console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Window,
+};
 
 use crate::{disequality, proof_search, term};
 
 fn unchecked_document() -> Document {
     let window = web_sys::window().expect("window must exist");
-    window.document().expect("document must exist")
-}
-
-fn unchecked_input_by_id(id: &str) -> HtmlInputElement {
-    unchecked_element_by_id(id).unchecked_into()
-}
-
-fn unchecked_element_by_id(id: &str) -> web_sys::Element {
-    unchecked_document()
-        .get_element_by_id(id)
-        .unwrap_or_else(|| {
-            panic!(
-                "{}",
-                format_args!("element with id '{id}' must exist")
-                    .as_str()
-                    .unwrap()
-                    .to_string()
-            )
-        })
-}
-
-fn left_input() -> HtmlInputElement {
-    unchecked_input_by_id("left-term")
-}
-
-fn right_input() -> HtmlInputElement {
-    unchecked_input_by_id("right-term")
-}
-
-fn left_term_view() -> HtmlElement {
-    unchecked_element_by_id("left-term-view").unchecked_into()
-}
-
-fn right_term_view() -> HtmlElement {
-    unchecked_element_by_id("right-term-view").unchecked_into()
+    window.document_unchecked()
 }
 
 pub(crate) fn setup() {
-    let left_input = left_input();
+    let document = unchecked_document();
+    let left_input = document.input_by_id_unchecked("left-term");
     let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
-    let right_input = right_input();
+    let right_input = document.input_by_id_unchecked("right-term");
     let right_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
-    render(left_input.value(), right_input.value());
+    render(&document, left_input.value(), right_input.value());
 }
 
 fn oninput(_event: InputEvent) {
-    let left_value = left_input().value();
-    let right_value = right_input().value();
+    let document = unchecked_document();
+    let left_value = document.input_by_id_unchecked("left-term").value();
+    let right_value = document.input_by_id_unchecked("right-term").value();
 
-    render(left_value, right_value);
+    render(&document, left_value, right_value);
 }
 
-fn render(left_value: String, right_value: String) {
+fn render(document: &Document, left_value: String, right_value: String) {
     console::log_4(
         &"as strings: ".into(),
         &left_value.as_str().into(),
@@ -87,10 +57,10 @@ fn render(left_value: String, right_value: String) {
         &serde_wasm_bindgen::to_value(&right).unwrap(),
     );
 
-    let left_term_view: Element = left_term_view().into();
+    let left_term_view = document.html_element_by_id_unchecked("left-term-view");
     left_term_view.set_text_content(None);
     left_term_view.append_child_unchecked(&TermTreeView(&left).render(&unchecked_document()));
-    let right_term_view = right_term_view();
+    let right_term_view = document.html_element_by_id_unchecked("right-term-view");
     right_term_view.set_text_content(None);
     right_term_view.append_child_unchecked(&TermTreeView(&right).render(&unchecked_document()));
 
@@ -121,12 +91,42 @@ impl NodeUnchecked for Node {
 
 trait DocumentUnchecked {
     fn create_element_unchecked(&self, element: &str) -> Element;
+
+    fn html_element_by_id_unchecked(&self, id: &str) -> HtmlElement;
+
+    fn input_by_id_unchecked(&self, id: &str) -> HtmlInputElement {
+        self.html_element_by_id_unchecked(id).unchecked_into()
+    }
 }
 
 impl DocumentUnchecked for Document {
     fn create_element_unchecked(&self, element: &str) -> Element {
         self.create_element(element)
             .expect("create element must work")
+    }
+
+    fn html_element_by_id_unchecked(&self, id: &str) -> HtmlElement {
+        self.get_element_by_id(id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}",
+                    format_args!("element with id '{id}' must exist")
+                        .as_str()
+                        .unwrap()
+                        .to_string()
+                )
+            })
+            .unchecked_into()
+    }
+}
+
+trait WindowUnchecked {
+    fn document_unchecked(&self) -> Document;
+}
+
+impl WindowUnchecked for Window {
+    fn document_unchecked(&self) -> Document {
+        self.document().expect("document must exist")
     }
 }
 
