@@ -6,7 +6,11 @@ use web_sys::{
     console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Window,
 };
 
-use crate::{disequality, polynomial::Polynomial, proof_search, term};
+use crate::{
+    disequality,
+    polynomial::{Polynomial, PolynomialDisplay},
+    proof_search, term,
+};
 
 fn unchecked_document() -> Document {
     let window = web_sys::window().expect("window must exist");
@@ -218,6 +222,16 @@ impl<'a> RenderNode for TermTreeView<'a> {
 
 impl RenderNode for Polynomial {
     fn render(&self, document: &Document) -> Node {
-        document.create_text_node(&format!("{}", self)).into()
+        document
+            .create_text_node(&format!(
+                "{}",
+                PolynomialDisplay {
+                    polynomial: self,
+                    variable_mapping: &|v| String::from(
+                        char::try_from(v).expect("variable must be valid char value")
+                    )
+                }
+            ))
+            .into()
     }
 }

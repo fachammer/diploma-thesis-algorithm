@@ -82,9 +82,34 @@ impl From<Monomial> for Multiset<u32> {
     }
 }
 
+fn default_variable_display(variable: u32) -> String {
+    format!("x_{variable}")
+}
+
 impl Display for Monomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut non_zero: Vec<&u32> = self.non_zero_variables_iter().collect();
+        MonomialDisplay {
+            monomial: self,
+            variable_mapping: &default_variable_display,
+        }
+        .fmt(f)
+    }
+}
+
+struct MonomialDisplay<'a, 'b, V>
+where
+    V: Fn(u32) -> String,
+{
+    monomial: &'a Monomial,
+    variable_mapping: &'b V,
+}
+
+impl<'a, 'b, V> Display for MonomialDisplay<'a, 'b, V>
+where
+    V: Fn(u32) -> String,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut non_zero: Vec<&u32> = self.monomial.non_zero_variables_iter().collect();
         non_zero.sort();
         if non_zero.is_empty() {
             return write!(f, "1");
@@ -92,9 +117,9 @@ impl Display for Monomial {
 
         let strings: Vec<String> = non_zero
             .into_iter()
-            .map(|variable| match self.exponent(variable) {
-                1 => format!("x_{variable}"),
-                exponent => format!("x_{variable}^{exponent}"),
+            .map(|variable| match self.monomial.exponent(variable) {
+                1 => (self.variable_mapping)(*variable),
+                exponent => format!("{}^{exponent}", (self.variable_mapping)(*variable)),
             })
             .collect();
         write!(f, "{}", strings.join(""))
@@ -267,7 +292,28 @@ impl From<u32> for Polynomial {
 
 impl Display for Polynomial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut non_zero: Vec<&Monomial> = self.non_zero_monomials_iter().collect();
+        PolynomialDisplay {
+            polynomial: self,
+            variable_mapping: &default_variable_display,
+        }
+        .fmt(f)
+    }
+}
+
+pub(crate) struct PolynomialDisplay<'a, 'b, V>
+where
+    V: Fn(u32) -> String,
+{
+    pub(crate) polynomial: &'a Polynomial,
+    pub(crate) variable_mapping: &'b V,
+}
+
+impl<'a, 'b, V> Display for PolynomialDisplay<'a, 'b, V>
+where
+    V: Fn(u32) -> String,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut non_zero: Vec<&Monomial> = self.polynomial.non_zero_monomials_iter().collect();
         non_zero.sort_by(|x, y| x.cmp(y).reverse());
 
         if non_zero.is_empty() {
@@ -276,11 +322,25 @@ impl Display for Polynomial {
         let strings: Vec<String> = non_zero
             .into_iter()
             .map(|monomial| {
-                let amount = self.coefficient(monomial);
+                let amount = self.polynomial.coefficient(monomial);
                 if monomial == &Monomial::one() {
                     format!("{amount}")
+                } else if amount == 1 {
+                    format!(
+                        "{}",
+                        MonomialDisplay {
+                            monomial,
+                            variable_mapping: self.variable_mapping
+                        }
+                    )
                 } else {
-                    format!("{amount}{monomial}")
+                    format!(
+                        "{amount}{}",
+                        MonomialDisplay {
+                            monomial,
+                            variable_mapping: self.variable_mapping
+                        }
+                    )
                 }
             })
             .collect();
