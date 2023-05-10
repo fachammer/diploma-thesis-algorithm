@@ -37,12 +37,12 @@ fn right_input() -> HtmlInputElement {
     unchecked_input_by_id("right-term")
 }
 
-fn left_term_display() -> HtmlElement {
-    unchecked_element_by_id("left-term-display").unchecked_into()
+fn left_term_view() -> HtmlElement {
+    unchecked_element_by_id("left-term-view").unchecked_into()
 }
 
-fn right_term_display() -> HtmlElement {
-    unchecked_element_by_id("right-term-display").unchecked_into()
+fn right_term_view() -> HtmlElement {
+    unchecked_element_by_id("right-term-view").unchecked_into()
 }
 
 pub(crate) fn setup() {
@@ -87,12 +87,12 @@ fn render(left_value: String, right_value: String) {
         &serde_wasm_bindgen::to_value(&right).unwrap(),
     );
 
-    let left_display: Element = left_term_display().into();
-    left_display.set_text_content(None);
-    left_display.append_child_unchecked(&TermTreeView(&left).render(&unchecked_document()));
-    let right_display = right_term_display();
-    right_display.set_text_content(None);
-    right_display.append_child_unchecked(&TermTreeView(&right).render(&unchecked_document()));
+    let left_term_view: Element = left_term_view().into();
+    left_term_view.set_text_content(None);
+    left_term_view.append_child_unchecked(&TermTreeView(&left).render(&unchecked_document()));
+    let right_term_view = right_term_view();
+    right_term_view.set_text_content(None);
+    right_term_view.append_child_unchecked(&TermTreeView(&right).render(&unchecked_document()));
 
     let disequality = TermDisequality::from_terms(left, right);
 
