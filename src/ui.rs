@@ -228,7 +228,7 @@ impl RenderNode for Polynomial {
                 PolynomialDisplay {
                     polynomial: self,
                     variable_mapping: &|v| String::from(
-                        char::try_from(v).expect("variable must be valid char value")
+                        char::try_from(v).expect("variable must be a valid char value")
                     )
                 }
             ))
