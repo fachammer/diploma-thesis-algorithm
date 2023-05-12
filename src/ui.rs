@@ -7,9 +7,9 @@ use web_sys::{
 };
 
 use crate::{
-    disequality,
+    disequality::{self, PolynomialDisequality},
     polynomial::{Polynomial, PolynomialDisplay},
-    proof::Proof,
+    proof::Skeleton,
     proof_search, term,
 };
 
@@ -71,20 +71,31 @@ fn render(document: &Document, left_value: String, right_value: String) {
 
     let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
     left_polynomial_view.set_text_content(None);
-    left_polynomial_view.append_child_unchecked(&Polynomial::from(left.clone()).render(document));
+    let left_polynomial = Polynomial::from(left.clone());
+    left_polynomial_view.append_child_unchecked(&left_polynomial.render(document));
 
     let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
     right_polynomial_view.set_text_content(None);
-    right_polynomial_view.append_child_unchecked(&Polynomial::from(right.clone()).render(document));
+    let right_polynomial = Polynomial::from(right.clone());
+    right_polynomial_view.append_child_unchecked(&right_polynomial.render(document));
 
     let disequality = TermDisequality::from_terms(left, right);
+
+    let reduced_polynomial_disequality =
+        PolynomialDisequality::from_polynomials_reduced(left_polynomial, right_polynomial);
 
     let proof_view = document.html_element_by_id_unchecked("proof-view");
     proof_view.set_text_content(None);
 
     match search_proof(&disequality) {
         Ok(proof) => {
-            proof_view.append_child_unchecked(&proof.render(document));
+            proof_view.append_child_unchecked(
+                &ProofTreeView {
+                    skeleton: &proof.skeleton,
+                    polynomial_conclusion: reduced_polynomial_disequality,
+                }
+                .render(document),
+            );
 
             let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
             console::log_2(&"found proof: ".into(), &proof)
@@ -242,12 +253,31 @@ impl RenderNode for Polynomial {
     }
 }
 
-impl RenderNode for Proof {
+struct ProofTreeView<'a> {
+    skeleton: &'a Skeleton,
+    polynomial_conclusion: PolynomialDisequality,
+}
+
+impl<'a> RenderNode for ProofTreeView<'a> {
     fn render(&self, document: &Document) -> Node {
-        match &self.skeleton {
-            crate::proof::Skeleton::SuccessorNonZero => {
-                document.create_text_node("successor non zero").into()
-            }
+        match self.skeleton {
+            crate::proof::Skeleton::SuccessorNonZero => document
+                .create_text_node(&format!(
+                    "{} ≠ {}: successor non zero",
+                    PolynomialDisplay {
+                        polynomial: &self.polynomial_conclusion.left,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                    },
+                    PolynomialDisplay {
+                        polynomial: &self.polynomial_conclusion.right,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                    },
+                ))
+                .into(),
             crate::proof::Skeleton::Split {
                 variable,
                 zero_skeleton,
@@ -255,7 +285,19 @@ impl RenderNode for Proof {
             } => {
                 let node = document.create_element_unchecked("span");
                 node.append_child_unchecked(&document.create_text_node(&format!(
-                    "split on {}",
+                    "{} ≠ {}: split on {}",
+                    PolynomialDisplay {
+                        polynomial: &self.polynomial_conclusion.left,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                    },
+                    PolynomialDisplay {
+                        polynomial: &self.polynomial_conclusion.right,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                    },
                     char::try_from(*variable).expect("must be a valid char")
                 )));
 
@@ -265,9 +307,12 @@ impl RenderNode for Proof {
                 let left_item = document.create_element_unchecked("li");
                 list.append_child_unchecked(&left_item);
 
-                let left_node = Proof {
-                    skeleton: *zero_skeleton.clone(),
-                    conclusion: self.conclusion.clone(),
+                let left_node = ProofTreeView {
+                    skeleton: &zero_skeleton.clone(),
+                    polynomial_conclusion: self
+                        .polynomial_conclusion
+                        .at_variable_zero(*variable)
+                        .reduce(),
                 }
                 .render(document);
                 left_item.append_child_unchecked(&left_node);
@@ -275,9 +320,13 @@ impl RenderNode for Proof {
                 let right_item = document.create_element_unchecked("li");
                 list.append_child_unchecked(&right_item);
 
-                let right_node = Proof {
-                    skeleton: *successor_skeleton.clone(),
-                    conclusion: self.conclusion.clone(),
+                let right_node = ProofTreeView {
+                    skeleton: &successor_skeleton.clone(),
+                    polynomial_conclusion: self
+                        .polynomial_conclusion
+                        .clone()
+                        .into_at_variable_plus_one(*variable)
+                        .reduce(),
                 }
                 .render(document);
                 right_item.append_child_unchecked(&right_node);
