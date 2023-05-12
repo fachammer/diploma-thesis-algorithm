@@ -9,6 +9,7 @@ use web_sys::{
 use crate::{
     disequality,
     polynomial::{Polynomial, PolynomialDisplay},
+    proof::Proof,
     proof_search, term,
 };
 
@@ -78,8 +79,13 @@ fn render(document: &Document, left_value: String, right_value: String) {
 
     let disequality = TermDisequality::from_terms(left, right);
 
+    let proof_view = document.html_element_by_id_unchecked("proof-view");
+    proof_view.set_text_content(None);
+
     match search_proof(&disequality) {
         Ok(proof) => {
+            proof_view.append_child_unchecked(&proof.render(document));
+
             let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
             console::log_2(&"found proof: ".into(), &proof)
         }
@@ -233,5 +239,51 @@ impl RenderNode for Polynomial {
                 }
             ))
             .into()
+    }
+}
+
+impl RenderNode for Proof {
+    fn render(&self, document: &Document) -> Node {
+        match &self.skeleton {
+            crate::proof::Skeleton::SuccessorNonZero => {
+                document.create_text_node("successor non zero").into()
+            }
+            crate::proof::Skeleton::Split {
+                variable,
+                zero_skeleton,
+                successor_skeleton,
+            } => {
+                let node = document.create_element_unchecked("span");
+                node.append_child_unchecked(&document.create_text_node(&format!(
+                    "split on {}",
+                    char::try_from(*variable).expect("must be a valid char")
+                )));
+
+                let list = document.create_element_unchecked("ul");
+                node.append_child_unchecked(&list);
+
+                let left_item = document.create_element_unchecked("li");
+                list.append_child_unchecked(&left_item);
+
+                let left_node = Proof {
+                    skeleton: *zero_skeleton.clone(),
+                    conclusion: self.conclusion.clone(),
+                }
+                .render(document);
+                left_item.append_child_unchecked(&left_node);
+
+                let right_item = document.create_element_unchecked("li");
+                list.append_child_unchecked(&right_item);
+
+                let right_node = Proof {
+                    skeleton: *successor_skeleton.clone(),
+                    conclusion: self.conclusion.clone(),
+                }
+                .render(document);
+                right_item.append_child_unchecked(&right_node);
+
+                node.into()
+            }
+        }
     }
 }
