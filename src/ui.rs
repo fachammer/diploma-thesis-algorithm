@@ -30,7 +30,7 @@ pub(crate) fn setup() {
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
-    render(&document, left_input.value(), right_input.value());
+    update(&document, left_input.value(), right_input.value());
 }
 
 fn unchecked_now() -> f64 {
@@ -46,10 +46,10 @@ fn oninput(_event: InputEvent) {
     let left_value = document.input_by_id_unchecked("left-term").value();
     let right_value = document.input_by_id_unchecked("right-term").value();
 
-    render(&document, left_value, right_value);
+    update(&document, left_value, right_value);
 }
 
-fn render(document: &Document, left_value: String, right_value: String) {
+fn update(document: &Document, left_value: String, right_value: String) {
     let start_time = unchecked_now();
     console::log_4(
         &"as strings: ".into(),
