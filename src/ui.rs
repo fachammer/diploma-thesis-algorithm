@@ -246,7 +246,9 @@ impl RenderNode for Polynomial {
                     polynomial: self,
                     variable_mapping: &|v| String::from(
                         char::try_from(v).expect("variable must be a valid char value")
-                    )
+                    ),
+                    number_of_largest_monomials: 5,
+                    number_of_smallest_monomials: 5
                 }
             ))
             .into()
@@ -269,12 +271,16 @@ impl<'a> RenderNode for ProofTreeView<'a> {
                         variable_mapping: &|v| String::from(
                             char::try_from(v).expect("must be a valid char")
                         ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
                     },
                     PolynomialDisplay {
                         polynomial: &self.polynomial_conclusion.right,
                         variable_mapping: &|v| String::from(
                             char::try_from(v).expect("must be a valid char")
                         ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
                     },
                 ))
                 .into(),
@@ -291,12 +297,16 @@ impl<'a> RenderNode for ProofTreeView<'a> {
                         variable_mapping: &|v| String::from(
                             char::try_from(v).expect("must be a valid char")
                         ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
                     },
                     PolynomialDisplay {
                         polynomial: &self.polynomial_conclusion.right,
                         variable_mapping: &|v| String::from(
                             char::try_from(v).expect("must be a valid char")
                         ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
                     },
                     char::try_from(*variable).expect("must be a valid char")
                 )));

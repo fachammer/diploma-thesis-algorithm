@@ -295,17 +295,22 @@ impl Display for Polynomial {
         PolynomialDisplay {
             polynomial: self,
             variable_mapping: &default_variable_display,
+            number_of_largest_monomials: 5,
+            number_of_smallest_monomials: 5,
         }
         .fmt(f)
     }
 }
 
+// TODO: extract common formatting options somehow
 pub(crate) struct PolynomialDisplay<'a, 'b, V>
 where
     V: Fn(u32) -> String,
 {
     pub(crate) polynomial: &'a Polynomial,
     pub(crate) variable_mapping: &'b V,
+    pub(crate) number_of_largest_monomials: usize,
+    pub(crate) number_of_smallest_monomials: usize,
 }
 
 impl<'a, 'b, V> Display for PolynomialDisplay<'a, 'b, V>
@@ -316,8 +321,11 @@ where
         let mut non_zero: Vec<(&Monomial, &u32)> =
             self.polynomial.non_zero_monomials_amount_iter().collect();
 
-        if non_zero.len() > 10 {
-            let (small_monomials, _, larger) = non_zero.select_nth_unstable(5);
+        // TODO: order monomials by strict divisibility first, then by lexicographic order
+
+        if non_zero.len() > self.number_of_largest_monomials + self.number_of_smallest_monomials {
+            let (small_monomials, _, larger) =
+                non_zero.select_nth_unstable(self.number_of_smallest_monomials);
             small_monomials.reverse();
 
             let small_monomials: Vec<String> = small_monomials
@@ -345,9 +353,10 @@ where
                 })
                 .collect();
 
-            let (large_monomials, _, _) =
-                larger.select_nth_unstable_by(5, |a, b| a.cmp(b).reverse());
-
+            let (large_monomials, _, _) = larger
+                .select_nth_unstable_by(self.number_of_largest_monomials, |a, b| {
+                    a.cmp(b).reverse()
+                });
             let large_monomials: Vec<String> = large_monomials
                 .iter_mut()
                 .map(|(monomial, &amount)| {
