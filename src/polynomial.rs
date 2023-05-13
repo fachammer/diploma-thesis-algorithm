@@ -160,8 +160,8 @@ impl Polynomial {
         self.is_monomially_smaller_than(other) || other.is_monomially_smaller_than(self)
     }
 
-    pub(crate) fn non_zero_monomials_iter(&self) -> impl Iterator<Item = &Monomial> {
-        self.0.support()
+    pub(crate) fn non_zero_monomials_amount_iter(&self) -> impl Iterator<Item = (&Monomial, &u32)> {
+        self.0.amount_iter()
     }
 
     pub(crate) fn at_variable_zero(&self, variable: u32) -> Self {
@@ -313,7 +313,8 @@ where
     V: Fn(u32) -> String,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut non_zero: Vec<&Monomial> = self.polynomial.non_zero_monomials_iter().collect();
+        let mut non_zero: Vec<(&Monomial, &u32)> =
+            self.polynomial.non_zero_monomials_amount_iter().collect();
         non_zero.sort_by(|x, y| x.cmp(y).reverse());
 
         if non_zero.is_empty() {
@@ -321,8 +322,7 @@ where
         }
         let strings: Vec<String> = non_zero
             .into_iter()
-            .map(|monomial| {
-                let amount = self.polynomial.coefficient(monomial);
+            .map(|(monomial, &amount)| {
                 if monomial == &Monomial::one() {
                     format!("{amount}")
                 } else if amount == 1 {
