@@ -67,12 +67,12 @@ impl PartialOrd for Monomial {
 
 impl Ord for Monomial {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let mut self_variables: Vec<&u32> = self.0.iter().collect();
-        let mut other_variables: Vec<&u32> = other.0.iter().collect();
-        match self_variables.len().cmp(&other_variables.len()) {
+        match self.0.len().cmp(&other.0.len()) {
             std::cmp::Ordering::Equal => {
-                self_variables.sort();
-                other_variables.sort();
+                let mut self_variables: Vec<(&u32, &u32)> = self.0.amount_iter().collect();
+                let mut other_variables: Vec<(&u32, &u32)> = other.0.amount_iter().collect();
+                self_variables.sort_unstable();
+                other_variables.sort_unstable();
                 self_variables.cmp(&other_variables).reverse()
             }
             len_order => len_order,

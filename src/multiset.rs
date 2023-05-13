@@ -62,6 +62,13 @@ mod vec {
             }
         }
 
+        #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+        pub(crate) fn len(&self) -> usize {
+            let sum: u32 = self.amount_iter().map(|(_, amount)| amount).sum();
+            sum.try_into()
+                .expect("target pointer width must be at least 32-bit")
+        }
+
         #[allow(dead_code)]
         pub(crate) fn with_capacity(capacity: usize) -> Self {
             Self {
@@ -128,21 +135,6 @@ mod vec {
 
         pub(crate) fn is_multisubset_of(&self, other: &MultisetVec<T>) -> bool {
             self.support().all(|k| self.amount(k) <= other.amount(k))
-        }
-
-        #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-        pub(crate) fn iter(&self) -> impl Iterator<Item = &T> {
-            let mut elements = vec![];
-            for (element, amount) in self.amount_iter() {
-                elements.extend(
-                    std::iter::repeat(element).take(
-                        (*amount)
-                            .try_into()
-                            .expect("target pointer width must be at least 32-bit"),
-                    ),
-                );
-            }
-            elements.into_iter()
         }
 
         pub(crate) fn contains(&self, element: &T) -> bool {
@@ -241,14 +233,6 @@ mod vec {
             let right = MultisetVec::from_iter(vec![(0, 0)]);
 
             assert_eq!(left, right);
-        }
-
-        #[test]
-        fn multiset_iter() {
-            let multiset = MultisetVec::from_iter(vec![(0, 1), (1, 2), (2, 3)]);
-            let mut elements: Vec<u32> = multiset.iter().copied().collect();
-            elements.sort();
-            assert_eq!(elements, vec![0, 1, 1, 2, 2, 2])
         }
     }
 }
