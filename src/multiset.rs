@@ -8,14 +8,14 @@ mod vec {
     #[derive(Debug, Clone)]
     pub(crate) struct MultisetVec<T>
     where
-        T: Hash + Eq,
+        T: Eq,
     {
         elements: Vec<(T, u32)>,
     }
 
     impl<T> FromIterator<(T, u32)> for MultisetVec<T>
     where
-        T: Eq + Hash,
+        T: Eq,
     {
         fn from_iter<U: IntoIterator<Item = (T, u32)>>(iter: U) -> Self {
             let iter = iter.into_iter();
@@ -30,14 +30,14 @@ mod vec {
 
     impl<T> PartialEq for MultisetVec<T>
     where
-        T: Eq + Hash,
+        T: Eq,
     {
         fn eq(&self, other: &Self) -> bool {
             self.is_multisubset_of(other) && other.is_multisubset_of(self)
         }
     }
 
-    impl<T> Eq for MultisetVec<T> where T: Eq + Hash {}
+    impl<T> Eq for MultisetVec<T> where T: Eq {}
 
     impl<T> Hash for MultisetVec<T>
     where
@@ -52,7 +52,7 @@ mod vec {
 
     impl<T> MultisetVec<T>
     where
-        T: Eq + Hash,
+        T: Eq,
     {
         pub(crate) fn new() -> Self {
             Self {
@@ -161,7 +161,7 @@ mod vec {
 
     impl<T> Default for MultisetVec<T>
     where
-        T: Eq + Hash,
+        T: Eq,
     {
         fn default() -> Self {
             Self::new()
@@ -170,7 +170,7 @@ mod vec {
 
     impl<T> MultisetVec<T>
     where
-        T: Eq + Hash + Clone,
+        T: Eq + Clone,
     {
         #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
         pub(crate) fn into_iter(self) -> impl Iterator<Item = T> {
@@ -190,7 +190,7 @@ mod vec {
 
     impl<T> Extend<(T, u32)> for MultisetVec<T>
     where
-        T: Eq + Hash,
+        T: Eq,
     {
         fn extend<U: IntoIterator<Item = (T, u32)>>(&mut self, iter: U) {
             for (k, v) in iter {
