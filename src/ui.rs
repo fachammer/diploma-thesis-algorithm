@@ -3,7 +3,7 @@ use proof_search::search_proof;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    console, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Window,
+    console, window, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Window,
 };
 
 use crate::{
@@ -33,6 +33,14 @@ pub(crate) fn setup() {
     render(&document, left_input.value(), right_input.value());
 }
 
+fn unchecked_now() -> f64 {
+    window()
+        .expect("there should be a window")
+        .performance()
+        .expect("there shold be performance")
+        .now()
+}
+
 fn oninput(_event: InputEvent) {
     let document = unchecked_document();
     let left_value = document.input_by_id_unchecked("left-term").value();
@@ -42,6 +50,7 @@ fn oninput(_event: InputEvent) {
 }
 
 fn render(document: &Document, left_value: String, right_value: String) {
+    let start_time = unchecked_now();
     console::log_4(
         &"as strings: ".into(),
         &left_value.as_str().into(),
@@ -106,6 +115,8 @@ fn render(document: &Document, left_value: String, right_value: String) {
             console::log_2(&"proof attempt: ".into(), &proof_attempt)
         }
     }
+    let end_time = unchecked_now();
+    console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
 }
 
 trait NodeUnchecked {
