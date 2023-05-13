@@ -353,10 +353,13 @@ where
                 })
                 .collect();
 
-            let (large_monomials, _, _) = larger
-                .select_nth_unstable_by(self.number_of_largest_monomials, |a, b| {
+            let (large_monomials, monomial, _) = larger
+                .select_nth_unstable_by(self.number_of_largest_monomials - 1, |a, b| {
                     a.cmp(b).reverse()
                 });
+            let mut large_monomials = Vec::from(large_monomials);
+            large_monomials.push(*monomial);
+
             let large_monomials: Vec<String> = large_monomials
                 .iter_mut()
                 .map(|(monomial, &amount)| {
