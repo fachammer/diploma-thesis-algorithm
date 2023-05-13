@@ -8,10 +8,16 @@
   </head>
 
   <body>
-    <script type="module">
-      import init from '../pkg/thesis_algorithm.js';
+    <script src="../pkg/thesis_algorithm.js"></script>
+    <script>
+      async function init() {
+        await wasm_bindgen('../pkg/thesis_algorithm_bg.wasm');
+        const { main } = wasm_bindgen;
 
-      init();
+        main();
+      }
+
+      init()
     </script>
     <div>
       <label for="left-term">left term input</label>

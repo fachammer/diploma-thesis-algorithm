@@ -1,16 +1,20 @@
+use std::{cell::RefCell, rc::Rc};
+
 use disequality::TermDisequality;
-use proof_search::search_proof;
+use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    console, window, Document, Element, HtmlElement, HtmlInputElement, InputEvent, Node, Window,
+    console, window, Document, Element, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
+    Node, Window, Worker,
 };
 
 use crate::{
     disequality::{self, PolynomialDisequality},
     polynomial::{Polynomial, PolynomialDisplay},
-    proof::Skeleton,
-    proof_search, term,
+    proof::{Proof, Skeleton},
+    proof_search::ProofAttempt,
+    term,
 };
 
 fn unchecked_document() -> Document {
@@ -19,18 +23,24 @@ fn unchecked_document() -> Document {
 }
 
 pub(crate) fn setup() {
+    let worker = Rc::new(RefCell::new(
+        Worker::new("./worker.js").expect("worker must exist"),
+    ));
     let document = unchecked_document();
+
+    console::log_1(&"hello".into());
+
     let left_input = document.input_by_id_unchecked("left-term");
-    let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
+    let left_input_on_change = oninput_handler(worker.clone());
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
     let right_input = document.input_by_id_unchecked("right-term");
-    let right_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(oninput));
+    let right_input_on_change = oninput_handler(worker.clone());
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
-    update(&document, left_input.value(), right_input.value());
+    update(&document, worker, left_input.value(), right_input.value());
 }
 
 fn unchecked_now() -> f64 {
@@ -41,16 +51,27 @@ fn unchecked_now() -> f64 {
         .now()
 }
 
-fn oninput(_event: InputEvent) {
-    let document = unchecked_document();
-    let left_value = document.input_by_id_unchecked("left-term").value();
-    let right_value = document.input_by_id_unchecked("right-term").value();
+fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
+    Closure::wrap(Box::new(move |_| {
+        let document = unchecked_document();
+        let left_value = document.input_by_id_unchecked("left-term").value();
+        let right_value = document.input_by_id_unchecked("right-term").value();
 
-    update(&document, left_value, right_value);
+        update(&document, worker.clone(), left_value, right_value);
+    }))
 }
 
-fn update(document: &Document, left_value: String, right_value: String) {
-    let start_time = unchecked_now();
+#[derive(Serialize, Deserialize)]
+pub struct SearchProof {
+    pub(crate) disequality: TermDisequality,
+}
+
+fn update(
+    document: &Document,
+    worker: Rc<RefCell<Worker>>,
+    left_value: String,
+    right_value: String,
+) {
     console::log_4(
         &"as strings: ".into(),
         &left_value.as_str().into(),
@@ -90,33 +111,54 @@ fn update(document: &Document, left_value: String, right_value: String) {
 
     let disequality = TermDisequality::from_terms(left, right);
 
-    let reduced_polynomial_disequality =
-        PolynomialDisequality::from_polynomials_reduced(left_polynomial, right_polynomial);
+    worker
+        .borrow()
+        .post_message(
+            &serde_wasm_bindgen::to_value(&SearchProof { disequality })
+                .expect("to value should work"),
+        )
+        .expect("post message should work");
 
-    let proof_view = document.html_element_by_id_unchecked("proof-view");
-    proof_view.set_text_content(None);
+    let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
+        let document = unchecked_document();
+        let start_time = unchecked_now();
 
-    match search_proof(&disequality) {
-        Ok(proof) => {
-            proof_view.append_child_unchecked(
-                &ProofTreeView {
-                    skeleton: &proof.skeleton,
-                    polynomial_conclusion: reduced_polynomial_disequality,
-                }
-                .render(document),
-            );
+        let proof_view = document.html_element_by_id_unchecked("proof-view");
+        proof_view.set_text_content(None);
 
-            let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
-            console::log_2(&"found proof: ".into(), &proof)
+        let proof_result: Result<Proof, ProofAttempt> =
+            serde_wasm_bindgen::from_value(event.data()).expect("from event data should work");
+
+        match proof_result {
+            Ok(proof) => {
+                proof_view.append_child_unchecked(
+                    &ProofTreeView {
+                        skeleton: &proof.skeleton,
+                        polynomial_conclusion: PolynomialDisequality::from(
+                            proof.conclusion.clone(),
+                        ),
+                    }
+                    .render(&document),
+                );
+
+                let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
+                console::log_2(&"found proof: ".into(), &proof)
+            }
+            Err(proof_attempt) => {
+                let proof_attempt =
+                    serde_wasm_bindgen::to_value(&proof_attempt).expect("serialize must succeed");
+                console::log_2(&"proof attempt: ".into(), &proof_attempt)
+            }
         }
-        Err(proof_attempt) => {
-            let proof_attempt =
-                serde_wasm_bindgen::to_value(&proof_attempt).expect("serialize must succeed");
-            console::log_2(&"proof attempt: ".into(), &proof_attempt)
-        }
-    }
-    let end_time = unchecked_now();
-    console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
+        let end_time = unchecked_now();
+        console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
+    }) as Box<dyn FnMut(_)>);
+    worker
+        .borrow()
+        .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
+
+    // TODO: fix this leakage
+    worker_callback.forget();
 }
 
 trait NodeUnchecked {

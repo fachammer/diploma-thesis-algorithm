@@ -6,17 +6,60 @@ pub mod proof_search;
 mod substitution;
 mod term;
 
-use wasm_bindgen::prelude::wasm_bindgen;
-use web_sys::console;
+use std::{cell::RefCell, rc::Rc};
+
+use proof_search::search_proof;
+use ui::SearchProof;
+use wasm_bindgen::{
+    prelude::{wasm_bindgen, Closure},
+    JsCast,
+};
+use web_sys::{console, DedicatedWorkerGlobalScope, MessageEvent};
 
 mod parse;
 mod ui;
 
-#[wasm_bindgen(start)]
+#[wasm_bindgen]
 pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     ui::setup();
 
     console::log_1(&"main ended".into());
+}
+
+#[wasm_bindgen]
+pub fn main_worker() {
+    console::log_1(&"hi from main_worker".into());
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+    let scope = Rc::new(RefCell::new(
+        js_sys::global()
+            .dyn_into::<DedicatedWorkerGlobalScope>()
+            .expect("worker scope must exist"),
+    ));
+
+    let scope_clone = scope.clone();
+
+    let onmessage_handler: Closure<dyn Fn(_)> =
+        Closure::wrap(Box::new(move |event: MessageEvent| {
+            console::log_1(&"got message in worker".into());
+            console::log_1(&event.data());
+
+            let SearchProof { disequality } =
+                serde_wasm_bindgen::from_value(event.data()).expect("from value should work");
+            let proof_result = search_proof(&disequality);
+
+            scope_clone
+                .borrow()
+                .post_message(
+                    &serde_wasm_bindgen::to_value(&proof_result).expect("to value should work"),
+                )
+                .expect("post message should work");
+        }));
+
+    scope
+        .borrow()
+        .set_onmessage(Some(onmessage_handler.as_ref().unchecked_ref()));
+    onmessage_handler.forget();
 }
