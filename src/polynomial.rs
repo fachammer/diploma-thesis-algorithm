@@ -69,10 +69,14 @@ impl Ord for Monomial {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let mut self_variables: Vec<&u32> = self.0.iter().collect();
         let mut other_variables: Vec<&u32> = other.0.iter().collect();
-        self_variables.sort_by(|x, y| x.cmp(y).reverse());
-        other_variables.sort_by(|x, y| x.cmp(y).reverse());
-
-        self_variables.cmp(&other_variables)
+        match self_variables.len().cmp(&other_variables.len()) {
+            std::cmp::Ordering::Equal => {
+                self_variables.sort();
+                other_variables.sort();
+                self_variables.cmp(&other_variables).reverse()
+            }
+            len_order => len_order,
+        }
     }
 }
 
@@ -321,12 +325,10 @@ where
         let mut non_zero: Vec<(&Monomial, &u32)> =
             self.polynomial.non_zero_monomials_amount_iter().collect();
 
-        // TODO: order monomials by strict divisibility first, then by lexicographic order
-
         if non_zero.len() > self.number_of_largest_monomials + self.number_of_smallest_monomials {
             let (small_monomials, _, larger) =
-                non_zero.select_nth_unstable(self.number_of_smallest_monomials);
-            small_monomials.reverse();
+                non_zero.select_nth_unstable_by_key(self.number_of_smallest_monomials, |a| a.0);
+            small_monomials.sort_by(|a, b| a.cmp(b).reverse());
 
             let small_monomials: Vec<String> = small_monomials
                 .iter_mut()
@@ -359,6 +361,7 @@ where
                 });
             let mut large_monomials = Vec::from(large_monomials);
             large_monomials.push(*monomial);
+            large_monomials.sort_by(|a, b| a.cmp(b).reverse());
 
             let large_monomials: Vec<String> = large_monomials
                 .iter_mut()
@@ -436,6 +439,13 @@ mod test {
         let x = || Monomial::from_variable(0, 1);
         let y = || Monomial::from_variable(1, 1);
         assert!(y() < x() * y());
+    }
+
+    #[test]
+    fn smaller_variables_are_larger() {
+        let x = || Monomial::from_variable(0, 1);
+        let y = || Monomial::from_variable(1, 1);
+        assert!(x() > y());
     }
 
     #[test]
