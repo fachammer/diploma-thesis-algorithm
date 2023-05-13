@@ -16,6 +16,59 @@ pub(crate) enum Skeleton {
         successor_skeleton: Box<Skeleton>,
     },
 }
+
+#[derive(Serialize, Deserialize)]
+pub enum CompletePolynomialProof {
+    SuccessorNonZero {
+        conclusion: PolynomialDisequality,
+    },
+    Split {
+        variable: u32,
+        conclusion: PolynomialDisequality,
+        zero_proof: Box<CompletePolynomialProof>,
+        successor_proof: Box<CompletePolynomialProof>,
+    },
+}
+
+impl From<Proof> for CompletePolynomialProof {
+    fn from(proof: Proof) -> Self {
+        match proof.skeleton {
+            Skeleton::SuccessorNonZero => Self::SuccessorNonZero {
+                conclusion: PolynomialDisequality::from(proof.conclusion),
+            },
+            Skeleton::Split {
+                variable,
+                zero_skeleton,
+                successor_skeleton,
+            } => {
+                let zero_proof = Proof {
+                    skeleton: *zero_skeleton,
+                    conclusion: proof
+                        .conclusion
+                        .substitute(&Substitution::from_iter([(variable, Term::Zero)])),
+                };
+
+                let successor_proof = Proof {
+                    skeleton: *successor_skeleton,
+                    conclusion: proof.conclusion.substitute(&Substitution::from_iter([(
+                        variable,
+                        Term::S(Term::Variable(variable).into()),
+                    )])),
+                };
+
+                let conclusion = PolynomialDisequality::from(proof.conclusion);
+
+                Self::Split {
+                    variable,
+                    conclusion,
+                    zero_proof: Box::new(Self::from(zero_proof)),
+                    successor_proof: Box::new(Self::from(successor_proof)),
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proof {
     pub(crate) skeleton: Skeleton,

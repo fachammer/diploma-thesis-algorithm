@@ -7,7 +7,9 @@ pub(crate) type Multiset<T> = MultisetVec<T>;
 mod vec {
     use std::hash::Hash;
 
-    #[derive(Debug, Clone)]
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub(crate) struct MultisetVec<T>
     where
         T: Eq,
@@ -240,10 +242,12 @@ mod vec {
 pub(crate) mod hash_map {
     use std::{collections::HashMap, hash::Hash};
 
-    #[derive(Debug, Clone)]
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub(crate) struct MultisetHashMap<T>
     where
-        T: Eq,
+        T: Eq + Hash,
     {
         elements: HashMap<T, u32>,
     }

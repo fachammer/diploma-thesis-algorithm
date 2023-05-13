@@ -12,7 +12,7 @@ use web_sys::{
 use crate::{
     disequality::{self, PolynomialDisequality},
     polynomial::{Polynomial, PolynomialDisplay},
-    proof::{Proof, Skeleton},
+    proof::{CompletePolynomialProof, Skeleton},
     proof_search::ProofAttempt,
     term,
 };
@@ -126,23 +126,15 @@ fn update(
         let proof_view = document.html_element_by_id_unchecked("proof-view");
         proof_view.set_text_content(None);
 
-        let proof_result: Result<Proof, ProofAttempt> =
+        let proof_result: Result<CompletePolynomialProof, ProofAttempt> =
             serde_wasm_bindgen::from_value(event.data()).expect("from event data should work");
 
         match proof_result {
             Ok(proof) => {
-                proof_view.append_child_unchecked(
-                    &ProofTreeView {
-                        skeleton: &proof.skeleton,
-                        polynomial_conclusion: PolynomialDisequality::from(
-                            proof.conclusion.clone(),
-                        ),
-                    }
-                    .render(&document),
-                );
+                proof_view.append_child_unchecked(&proof.render(&document));
 
-                let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
-                console::log_2(&"found proof: ".into(), &proof)
+                // let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
+                // console::log_2(&"found proof: ".into(), &proof)
             }
             Err(proof_attempt) => {
                 let proof_attempt =
@@ -392,6 +384,79 @@ impl<'a> RenderNode for ProofTreeView<'a> {
                         .reduce(),
                 }
                 .render(document);
+                right_item.append_child_unchecked(&right_node);
+
+                node.into()
+            }
+        }
+    }
+}
+
+impl RenderNode for CompletePolynomialProof {
+    fn render(&self, document: &Document) -> Node {
+        match self {
+            crate::proof::CompletePolynomialProof::SuccessorNonZero { conclusion } => document
+                .create_text_node(&format!(
+                    "{} ≠ {}: successor non zero",
+                    PolynomialDisplay {
+                        polynomial: &conclusion.left,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
+                    },
+                    PolynomialDisplay {
+                        polynomial: &conclusion.right,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
+                    },
+                ))
+                .into(),
+            crate::proof::CompletePolynomialProof::Split {
+                variable,
+                conclusion,
+                zero_proof,
+                successor_proof,
+            } => {
+                let node = document.create_element_unchecked("span");
+                node.append_child_unchecked(&document.create_text_node(&format!(
+                    "{} ≠ {}: split on {}",
+                    PolynomialDisplay {
+                        polynomial: &conclusion.left,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
+                    },
+                    PolynomialDisplay {
+                        polynomial: &conclusion.right,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
+                    },
+                    char::try_from(*variable).expect("must be a valid char")
+                )));
+
+                let list = document.create_element_unchecked("ul");
+                node.append_child_unchecked(&list);
+
+                let left_item = document.create_element_unchecked("li");
+                list.append_child_unchecked(&left_item);
+
+                let left_node = zero_proof.render(document);
+                left_item.append_child_unchecked(&left_node);
+
+                let right_item = document.create_element_unchecked("li");
+                list.append_child_unchecked(&right_item);
+
+                let right_node = successor_proof.render(document);
                 right_item.append_child_unchecked(&right_node);
 
                 node.into()

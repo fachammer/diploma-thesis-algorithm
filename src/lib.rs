@@ -8,7 +8,7 @@ mod term;
 
 use std::{cell::RefCell, rc::Rc};
 
-use proof_search::search_proof;
+use proof_search::search_complete_proof;
 use ui::SearchProof;
 use wasm_bindgen::{
     prelude::{wasm_bindgen, Closure},
@@ -48,7 +48,7 @@ pub fn main_worker() {
 
             let SearchProof { disequality } =
                 serde_wasm_bindgen::from_value(event.data()).expect("from value should work");
-            let proof_result = search_proof(&disequality);
+            let proof_result = search_complete_proof(&disequality);
 
             scope_clone
                 .borrow()

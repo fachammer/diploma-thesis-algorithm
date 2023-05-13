@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     multiset::hash_map::MultisetHashMap,
     polynomial::{Monomial, Polynomial},
+    proof::CompletePolynomialProof,
     term::Term,
 };
 
@@ -26,6 +27,13 @@ pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt
         conclusion: disequality.clone(),
         skeleton,
     })
+}
+
+pub fn search_complete_proof(
+    disequality: &TermDisequality,
+) -> Result<CompletePolynomialProof, ProofAttempt> {
+    let proof = search_proof(disequality)?;
+    Ok(CompletePolynomialProof::from(proof))
 }
 
 fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofAttempt {

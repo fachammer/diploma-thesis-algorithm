@@ -4,9 +4,11 @@ use std::{
     ops::{Add, Mul, MulAssign},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::multiset::{hash_map::MultisetHashMap, Multiset};
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub(crate) struct Monomial(pub(crate) Multiset<u32>);
 
 impl Monomial {
@@ -130,7 +132,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Polynomial(pub(crate) MultisetHashMap<Monomial>);
 
 impl Polynomial {
