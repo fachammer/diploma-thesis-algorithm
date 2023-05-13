@@ -1,14 +1,16 @@
 use std::hash::Hash;
 
+pub(crate) type Multiset<T> = MultisetVec<T>;
+
 #[derive(Debug, Clone)]
-pub(crate) struct Multiset<T>
+pub(crate) struct MultisetVec<T>
 where
     T: Hash + Eq,
 {
     elements: Vec<(T, u32)>,
 }
 
-impl<T> FromIterator<(T, u32)> for Multiset<T>
+impl<T> FromIterator<(T, u32)> for MultisetVec<T>
 where
     T: Eq + Hash,
 {
@@ -23,7 +25,7 @@ where
     }
 }
 
-impl<T> PartialEq for Multiset<T>
+impl<T> PartialEq for MultisetVec<T>
 where
     T: Eq + Hash,
 {
@@ -32,9 +34,9 @@ where
     }
 }
 
-impl<T> Eq for Multiset<T> where T: Eq + Hash {}
+impl<T> Eq for MultisetVec<T> where T: Eq + Hash {}
 
-impl<T> Hash for Multiset<T>
+impl<T> Hash for MultisetVec<T>
 where
     T: Eq + Hash + Ord,
 {
@@ -45,7 +47,7 @@ where
     }
 }
 
-impl<T> Multiset<T>
+impl<T> MultisetVec<T>
 where
     T: Eq + Hash,
 {
@@ -116,7 +118,7 @@ where
         self.elements.into_iter()
     }
 
-    pub(crate) fn is_multisubset_of(&self, other: &Multiset<T>) -> bool {
+    pub(crate) fn is_multisubset_of(&self, other: &MultisetVec<T>) -> bool {
         self.support().all(|k| self.amount(k) <= other.amount(k))
     }
 
@@ -154,7 +156,7 @@ where
     }
 }
 
-impl<T> Default for Multiset<T>
+impl<T> Default for MultisetVec<T>
 where
     T: Eq + Hash,
 {
@@ -163,7 +165,7 @@ where
     }
 }
 
-impl<T> Multiset<T>
+impl<T> MultisetVec<T>
 where
     T: Eq + Hash + Clone,
 {
@@ -183,7 +185,7 @@ where
     }
 }
 
-impl<T> Extend<(T, u32)> for Multiset<T>
+impl<T> Extend<(T, u32)> for MultisetVec<T>
 where
     T: Eq + Hash,
 {
@@ -200,16 +202,16 @@ mod test {
 
     #[test]
     fn multiset_extend() {
-        let mut left = Multiset::from_iter(vec![(0, 2), (1, 1)]);
-        let right = Multiset::<u32>::from_iter(vec![(1, 1), (2, 2)]);
+        let mut left = MultisetVec::from_iter(vec![(0, 2), (1, 1)]);
+        let right = MultisetVec::<u32>::from_iter(vec![(1, 1), (2, 2)]);
         left.extend(right.into_amount_iter());
 
-        assert_eq!(left, Multiset::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
+        assert_eq!(left, MultisetVec::from_iter(vec![(0, 2), (1, 2), (2, 2)]));
     }
 
     #[test]
     fn multiset_from_iter() {
-        let multiset = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 0), (0, 2)]);
+        let multiset = MultisetVec::from_iter(vec![(0, 1), (1, 2), (2, 0), (0, 2)]);
 
         assert_eq!(multiset.amount(&0), 3);
         assert_eq!(multiset.amount(&1), 2);
@@ -219,23 +221,23 @@ mod test {
 
     #[test]
     fn multiset_eq() {
-        let left = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 0)]);
-        let right = Multiset::from_iter(vec![(0, 1), (1, 2)]);
+        let left = MultisetVec::from_iter(vec![(0, 1), (1, 2), (2, 0)]);
+        let right = MultisetVec::from_iter(vec![(0, 1), (1, 2)]);
 
         assert_eq!(left, right);
     }
 
     #[test]
     fn multiset_eq_for_empty() {
-        let left = Multiset::new();
-        let right = Multiset::from_iter(vec![(0, 0)]);
+        let left = MultisetVec::new();
+        let right = MultisetVec::from_iter(vec![(0, 0)]);
 
         assert_eq!(left, right);
     }
 
     #[test]
     fn multiset_iter() {
-        let multiset = Multiset::from_iter(vec![(0, 1), (1, 2), (2, 3)]);
+        let multiset = MultisetVec::from_iter(vec![(0, 1), (1, 2), (2, 3)]);
         let mut elements: Vec<u32> = multiset.iter().copied().collect();
         elements.sort();
         assert_eq!(elements, vec![0, 1, 1, 2, 2, 2])
