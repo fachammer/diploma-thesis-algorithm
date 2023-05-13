@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Mul, MulAssign},
 };
 
-use crate::multiset::Multiset;
+use crate::multiset::{hash_map::MultisetHashMap, Multiset};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub(crate) struct Monomial(pub(crate) Multiset<u32>);
@@ -127,11 +127,11 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Polynomial(pub(crate) Multiset<Monomial>);
+pub(crate) struct Polynomial(pub(crate) MultisetHashMap<Monomial>);
 
 impl Polynomial {
     pub(crate) fn from_variable(v: u32) -> Self {
-        Self(Multiset::from_iter(vec![(
+        Self(MultisetHashMap::from_iter(vec![(
             Monomial::from_variable(v, 1),
             1,
         )]))
@@ -165,7 +165,7 @@ impl Polynomial {
     }
 
     pub(crate) fn at_variable_zero(&self, variable: u32) -> Self {
-        let mut monomials = Multiset::with_capacity(self.0.support().count());
+        let mut monomials = MultisetHashMap::with_capacity(self.0.support().count());
         for (monomial, amount) in self.0.amount_iter() {
             if !monomial.has_variable(&variable) {
                 *monomials.amount_mut(monomial.clone()) = *amount;
@@ -205,7 +205,7 @@ impl Polynomial {
     }
 
     pub(crate) fn into_at_variable_plus_one(self, variable: u32) -> Self {
-        let mut monomials = Multiset::with_capacity(5 * self.0.support().count());
+        let mut monomials = MultisetHashMap::with_capacity(5 * self.0.support().count());
         for (monomial, amount) in self.0.into_amount_iter() {
             let variable_exponent = monomial.exponent(&variable);
             if variable_exponent > 0 {
@@ -230,14 +230,14 @@ impl Polynomial {
     }
 }
 
-impl From<Polynomial> for Multiset<Monomial> {
+impl From<Polynomial> for MultisetHashMap<Monomial> {
     fn from(p: Polynomial) -> Self {
         p.0
     }
 }
 
-impl From<Multiset<Monomial>> for Polynomial {
-    fn from(monomials: Multiset<Monomial>) -> Self {
+impl From<MultisetHashMap<Monomial>> for Polynomial {
+    fn from(monomials: MultisetHashMap<Monomial>) -> Self {
         Self(monomials)
     }
 }
@@ -264,7 +264,7 @@ impl Mul for Polynomial {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut output: Multiset<Monomial> = Multiset::new();
+        let mut output: MultisetHashMap<Monomial> = MultisetHashMap::new();
         for self_monomial in self.0.support() {
             for other_monomial in rhs.0.support() {
                 let product_monomial = self_monomial.clone() * other_monomial.clone();
@@ -286,7 +286,7 @@ impl Mul<Polynomial> for u32 {
 
 impl From<u32> for Polynomial {
     fn from(n: u32) -> Self {
-        Polynomial(Multiset::from_iter([(Monomial::one(), n)]))
+        Polynomial(MultisetHashMap::from_iter([(Monomial::one(), n)]))
     }
 }
 
@@ -377,8 +377,8 @@ mod test {
 
     #[test]
     fn eq_polynomials() {
-        let p = Polynomial(Multiset::from_iter([(Monomial::one(), 0)]));
-        let q = Polynomial(Multiset::from_iter([]));
+        let p = Polynomial(MultisetHashMap::from_iter([(Monomial::one(), 0)]));
+        let q = Polynomial(MultisetHashMap::from_iter([]));
         assert_eq!(p, q)
     }
 

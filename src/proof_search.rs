@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    multiset::Multiset,
+    multiset::hash_map::MultisetHashMap,
     polynomial::{Monomial, Polynomial},
     term::Term,
 };
@@ -249,7 +249,7 @@ impl From<Monomial> for Term {
 impl From<Polynomial> for Term {
     fn from(p: Polynomial) -> Self {
         let mut summands = vec![];
-        let monomials: Multiset<Monomial> = p.into();
+        let monomials: MultisetHashMap<Monomial> = p.into();
         let mut monomials: Vec<Monomial> = monomials.into_iter().collect();
         monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
         for monomial in monomials {
@@ -267,6 +267,7 @@ mod test {
 
     use crate::{
         disequality::TermDisequality,
+        multiset::Multiset,
         polynomial::Polynomial,
         proof_search::{is_disequality_provable, search_proof},
         term::Term,
@@ -359,7 +360,7 @@ mod test {
 
     prop_compose! {
         fn polynomial(max_exponent: u32, max_factors: usize, max_coefficient: u32, max_coefficients: usize)(coefficients in prop::collection::vec((monomial(max_exponent, max_factors), 0..=max_coefficient), 0..=max_coefficients)) -> Polynomial {
-            Polynomial(Multiset::from_iter(coefficients))
+            Polynomial(MultisetHashMap::from_iter(coefficients))
         }
     }
 

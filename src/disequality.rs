@@ -3,7 +3,7 @@ use std::{collections::HashSet, fmt::Display};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    multiset::Multiset,
+    multiset::hash_map::MultisetHashMap,
     polynomial::{Monomial, Polynomial},
     substitution::Substitution,
     term::Term,
@@ -39,8 +39,8 @@ impl PolynomialDisequality {
     }
 
     pub(crate) fn reduce(self) -> Self {
-        let mut left = Multiset::from(self.left);
-        let mut right = Multiset::from(self.right);
+        let mut left = MultisetHashMap::from(self.left);
+        let mut right = MultisetHashMap::from(self.right);
 
         for (monomial, left_amount) in left.amount_iter_mut() {
             if let Some(right_amount) = right.amount_mut_by_ref(monomial) {
