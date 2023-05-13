@@ -315,36 +315,101 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut non_zero: Vec<(&Monomial, &u32)> =
             self.polynomial.non_zero_monomials_amount_iter().collect();
-        non_zero.sort_by(|x, y| x.cmp(y).reverse());
 
-        if non_zero.is_empty() {
-            return write!(f, "0");
+        if non_zero.len() > 10 {
+            let (small_monomials, _, larger) = non_zero.select_nth_unstable(5);
+            small_monomials.reverse();
+
+            let small_monomials: Vec<String> = small_monomials
+                .iter_mut()
+                .map(|(monomial, &amount)| {
+                    if monomial == &&Monomial::one() {
+                        format!("{amount}")
+                    } else if amount == 1 {
+                        format!(
+                            "{}",
+                            MonomialDisplay {
+                                monomial,
+                                variable_mapping: self.variable_mapping
+                            }
+                        )
+                    } else {
+                        format!(
+                            "{amount}{}",
+                            MonomialDisplay {
+                                monomial,
+                                variable_mapping: self.variable_mapping
+                            }
+                        )
+                    }
+                })
+                .collect();
+
+            let (large_monomials, _, _) =
+                larger.select_nth_unstable_by(5, |a, b| a.cmp(b).reverse());
+
+            let large_monomials: Vec<String> = large_monomials
+                .iter_mut()
+                .map(|(monomial, &amount)| {
+                    if monomial == &&Monomial::one() {
+                        format!("{amount}")
+                    } else if amount == 1 {
+                        format!(
+                            "{}",
+                            MonomialDisplay {
+                                monomial,
+                                variable_mapping: self.variable_mapping
+                            }
+                        )
+                    } else {
+                        format!(
+                            "{amount}{}",
+                            MonomialDisplay {
+                                monomial,
+                                variable_mapping: self.variable_mapping
+                            }
+                        )
+                    }
+                })
+                .collect();
+            write!(
+                f,
+                "{} + ... + {}",
+                large_monomials.join(" + "),
+                small_monomials.join(" + ")
+            )
+        } else {
+            non_zero.sort_by(|x, y| x.cmp(y).reverse());
+
+            if non_zero.is_empty() {
+                return write!(f, "0");
+            }
+            let strings: Vec<String> = non_zero
+                .into_iter()
+                .map(|(monomial, &amount)| {
+                    if monomial == &Monomial::one() {
+                        format!("{amount}")
+                    } else if amount == 1 {
+                        format!(
+                            "{}",
+                            MonomialDisplay {
+                                monomial,
+                                variable_mapping: self.variable_mapping
+                            }
+                        )
+                    } else {
+                        format!(
+                            "{amount}{}",
+                            MonomialDisplay {
+                                monomial,
+                                variable_mapping: self.variable_mapping
+                            }
+                        )
+                    }
+                })
+                .collect();
+            write!(f, "{}", strings.join(" + "))
         }
-        let strings: Vec<String> = non_zero
-            .into_iter()
-            .map(|(monomial, &amount)| {
-                if monomial == &Monomial::one() {
-                    format!("{amount}")
-                } else if amount == 1 {
-                    format!(
-                        "{}",
-                        MonomialDisplay {
-                            monomial,
-                            variable_mapping: self.variable_mapping
-                        }
-                    )
-                } else {
-                    format!(
-                        "{amount}{}",
-                        MonomialDisplay {
-                            monomial,
-                            variable_mapping: self.variable_mapping
-                        }
-                    )
-                }
-            })
-            .collect();
-        write!(f, "{}", strings.join(" + "))
     }
 }
 
