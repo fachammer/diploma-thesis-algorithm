@@ -197,15 +197,9 @@ impl Polynomial {
 
     fn binomial_coefficient(n: u32, k: u32) -> u32 {
         let (numerator, denominator): (u32, u32) = if 2 * k > n {
-            (
-                (k + 1..=n).into_iter().product(),
-                (1..=(n - k)).into_iter().product(),
-            )
+            ((k + 1..=n).product(), (1..=(n - k)).product())
         } else {
-            (
-                ((n - k) + 1..=n).into_iter().product(),
-                (1..=k).into_iter().product(),
-            )
+            (((n - k) + 1..=n).product(), (1..=k).product())
         };
         numerator / denominator
     }
