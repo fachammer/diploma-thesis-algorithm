@@ -1,8 +1,6 @@
 importScripts("../pkg/thesis_algorithm.js");
 
-async function init() {
-  await wasm_bindgen("../pkg/thesis_algorithm_bg.wasm");
+self.onmessage = async (event) => {
+  await wasm_bindgen("../pkg/thesis_algorithm_bg.wasm", event.data);
   wasm_bindgen.main_worker();
-}
-
-init();
+};

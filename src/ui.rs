@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
 use term::Term;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{memory, prelude::*};
 use web_sys::{
     console, window, Document, Element, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
     Node, Window, Worker,
@@ -56,6 +56,10 @@ pub(crate) fn setup() {
     worker
         .borrow()
         .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
+    worker
+        .borrow()
+        .post_message(&memory())
+        .expect("post message memory should work");
     worker_callback.forget();
 }
 
