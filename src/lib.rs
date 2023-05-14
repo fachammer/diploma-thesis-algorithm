@@ -62,4 +62,8 @@ pub fn main_worker() {
         .borrow()
         .set_onmessage(Some(onmessage_handler.as_ref().unchecked_ref()));
     onmessage_handler.forget();
+    scope
+        .borrow()
+        .post_message(&"ready".into())
+        .expect("post message should work");
 }

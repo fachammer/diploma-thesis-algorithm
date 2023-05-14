@@ -40,7 +40,23 @@ pub(crate) fn setup() {
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
-    update(&document, worker, left_input.value(), right_input.value());
+    let worker_clone = worker.clone();
+    let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
+        console::log_1(&"got ready message".into());
+        assert_eq!(event.data(), "ready");
+        worker_clone.borrow().set_onmessage(None);
+
+        update(
+            &document,
+            worker_clone.clone(),
+            left_input.value(),
+            right_input.value(),
+        );
+    }) as Box<dyn Fn(_)>);
+    worker
+        .borrow()
+        .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
+    worker_callback.forget();
 }
 
 fn unchecked_now() -> f64 {
