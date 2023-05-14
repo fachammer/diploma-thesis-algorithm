@@ -145,16 +145,17 @@ fn update(
 
         let proof_view = document.html_element_by_id_unchecked("proof-view");
         proof_view.set_text_content(None);
+        let proof_result_pointer = event.data().as_f64().expect("data must be a number") as u32;
 
-        let proof_result: Result<CompletePolynomialProof, ProofAttempt> =
-            serde_wasm_bindgen::from_value(event.data()).expect("from event data should work");
+        let proof_result = unsafe {
+            Box::from_raw(
+                proof_result_pointer as *mut Result<CompletePolynomialProof, ProofAttempt>,
+            )
+        };
 
-        match proof_result {
+        match *proof_result {
             Ok(proof) => {
                 proof_view.append_child_unchecked(&proof.render(&document));
-
-                // let proof = serde_wasm_bindgen::to_value(&proof).expect("serialize must succeed");
-                // console::log_2(&"found proof: ".into(), &proof)
             }
             Err(proof_attempt) => {
                 let proof_attempt =
@@ -415,27 +416,37 @@ impl<'a> RenderNode for ProofTreeView<'a> {
 impl RenderNode for CompletePolynomialProof {
     fn render(&self, document: &Document) -> Node {
         match self {
-            crate::proof::CompletePolynomialProof::SuccessorNonZero { conclusion } => document
-                .create_text_node(&format!(
-                    "{} ≠ {}: successor non zero",
-                    PolynomialDisplay {
-                        polynomial: &conclusion.left,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                    PolynomialDisplay {
-                        polynomial: &conclusion.right,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                ))
-                .into(),
+            crate::proof::CompletePolynomialProof::SuccessorNonZero { conclusion } => {
+                console::log_1(
+                    &format!(
+                        "left polynomial monomials: {}",
+                        conclusion.left.0.support().count()
+                    )
+                    .into(),
+                );
+
+                document
+                    .create_text_node(&format!(
+                        "{} ≠ {}: successor non zero",
+                        PolynomialDisplay {
+                            polynomial: &conclusion.left,
+                            variable_mapping: &|v| String::from(
+                                char::try_from(v).expect("must be a valid char")
+                            ),
+                            number_of_largest_monomials: 1,
+                            number_of_smallest_monomials: 5
+                        },
+                        PolynomialDisplay {
+                            polynomial: &conclusion.right,
+                            variable_mapping: &|v| String::from(
+                                char::try_from(v).expect("must be a valid char")
+                            ),
+                            number_of_largest_monomials: 1,
+                            number_of_smallest_monomials: 5
+                        },
+                    ))
+                    .into()
+            }
             crate::proof::CompletePolynomialProof::Split {
                 variable,
                 conclusion,

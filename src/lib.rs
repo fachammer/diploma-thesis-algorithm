@@ -12,7 +12,7 @@ use proof_search::search_complete_proof;
 use ui::SearchProof;
 use wasm_bindgen::{
     prelude::{wasm_bindgen, Closure},
-    JsCast,
+    JsCast, JsValue,
 };
 use web_sys::{console, DedicatedWorkerGlobalScope, MessageEvent};
 
@@ -52,9 +52,7 @@ pub fn main_worker() {
 
             scope_clone
                 .borrow()
-                .post_message(
-                    &serde_wasm_bindgen::to_value(&proof_result).expect("to value should work"),
-                )
+                .post_message(&JsValue::from(Box::into_raw(Box::new(proof_result))))
                 .expect("post message should work");
         }));
 
