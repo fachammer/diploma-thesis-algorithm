@@ -12,9 +12,8 @@
     <script>
       async function init() {
         await wasm_bindgen('../pkg/thesis_algorithm_bg.wasm');
-        const { main } = wasm_bindgen;
 
-        main();
+        wasm_bindgen.main();
       }
 
       init()
