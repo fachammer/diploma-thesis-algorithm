@@ -1,9 +1,8 @@
-<!doctype html>
+<!DOCTYPE html>
 
 <html>
-
   <head>
-    <meta charset="utf-8">
+    <meta charset="utf-8" />
     <title>WASM test</title>
   </head>
 
@@ -11,20 +10,21 @@
     <script src="../pkg/thesis_algorithm.js"></script>
     <script>
       async function init() {
-        await wasm_bindgen('../pkg/thesis_algorithm_bg.wasm');
+        await wasm_bindgen("../pkg/thesis_algorithm_bg.wasm");
 
         wasm_bindgen.main();
       }
 
-      init()
+      init();
     </script>
+
     <div>
       <label for="left-term">left term input</label>
-      <input id="left-term" type="text" value="0"/>
+      <input id="left-term" type="text" value="0" />
     </div>
     <div>
       <label for="left-term">right term input</label>
-      <input id="right-term" type="text" value="0"/>
+      <input id="right-term" type="text" value="0" />
     </div>
     <div>
       <label for="left-term-view">left term tree view</label>
@@ -53,5 +53,4 @@
       </ul>
     </div>
   </body>
-
 </html>
