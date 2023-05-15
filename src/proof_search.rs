@@ -36,25 +36,50 @@ pub fn search_complete_proof(
     Ok(CompletePolynomialProof::from(proof))
 }
 
-fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofAttempt {
-    let mut proof = ProofInProgress::Hole;
+struct ProofSearchIterator<'a> {
+    holes: VecDeque<(&'a mut ProofInProgress, PolynomialDisequality, u32)>,
+}
 
-    let mut holes = VecDeque::from_iter([(&mut proof, disequality, u32::MAX)]);
+impl<'a> ProofSearchIterator<'a> {
+    fn new(
+        disequality: PolynomialDisequality,
+        proof: &'a mut ProofInProgress,
+    ) -> ProofSearchIterator<'a> {
+        Self {
+            holes: VecDeque::from_iter([(proof, disequality, u32::MAX)]),
+        }
+    }
+}
 
-    while let Some((hole, disequality, previous_split_variable)) = holes.pop_front() {
+impl<'a> Iterator for ProofSearchIterator<'a> {
+    type Item = ();
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (hole, disequality, previous_split_variable) = self.holes.pop_front()?;
+
         let disequality = disequality.reduce();
         if let Ok(()) = try_fill_hole_with_non_split_proof(hole, &disequality) {
-            continue;
+            return Some(());
         }
 
         let split_variable = next_split_variable(&disequality, previous_split_variable);
         let (zero_proof, successor_proof) = fill_hole_with_split_proof(hole, split_variable);
         let zero_disequality = disequality.at_variable_zero(split_variable);
-        holes.push_back((zero_proof, zero_disequality, split_variable));
+        self.holes
+            .push_back((zero_proof, zero_disequality, split_variable));
 
         let successor_disequality = disequality.into_at_variable_plus_one(split_variable);
-        holes.push_back((successor_proof, successor_disequality, split_variable));
+        self.holes
+            .push_back((successor_proof, successor_disequality, split_variable));
+        Some(())
     }
+}
+
+fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofAttempt {
+    let mut proof = ProofInProgress::Hole;
+    let proof_search_iter = ProofSearchIterator::new(disequality, &mut proof);
+
+    for _ in proof_search_iter {}
 
     ProofAttempt::try_from(proof).expect("proof attempt has no holes")
 }
