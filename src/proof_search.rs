@@ -36,8 +36,14 @@ pub fn search_complete_proof(
     Ok(CompletePolynomialProof::from(proof))
 }
 
+struct ProofHole<'a> {
+    hole: &'a mut ProofInProgress,
+    disequality: PolynomialDisequality,
+    previous_split_variable: u32,
+}
+
 struct ProofSearchIterator<'a> {
-    holes: VecDeque<(&'a mut ProofInProgress, PolynomialDisequality, u32)>,
+    holes: VecDeque<ProofHole<'a>>,
 }
 
 impl<'a> ProofSearchIterator<'a> {
@@ -46,7 +52,11 @@ impl<'a> ProofSearchIterator<'a> {
         proof: &'a mut ProofInProgress,
     ) -> ProofSearchIterator<'a> {
         Self {
-            holes: VecDeque::from_iter([(proof, disequality, u32::MAX)]),
+            holes: VecDeque::from_iter([ProofHole {
+                hole: proof,
+                disequality,
+                previous_split_variable: u32::MAX,
+            }]),
         }
     }
 }
@@ -55,23 +65,70 @@ impl<'a> Iterator for ProofSearchIterator<'a> {
     type Item = ();
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (hole, disequality, previous_split_variable) = self.holes.pop_front()?;
+        let ProofHole {
+            hole,
+            disequality,
+            previous_split_variable,
+        } = self.holes.pop_front()?;
 
-        let disequality = disequality.reduce();
-        if let Ok(()) = try_fill_hole_with_non_split_proof(hole, &disequality) {
-            return Some(());
+        match search_proof_step(disequality, previous_split_variable) {
+            ProofStepResult::NotStrictlyMonomiallyComparable => {
+                *hole = ProofInProgress::NotStrictlyMonomiallyComparable
+            }
+            ProofStepResult::FoundRoot => *hole = ProofInProgress::FoundRoot,
+            ProofStepResult::SuccessorNonZero => *hole = ProofInProgress::SuccessorNonZero,
+            ProofStepResult::Split {
+                variable,
+                zero_conclusion,
+                successor_conclusion,
+            } => {
+                let (zero_proof, successor_proof) = fill_hole_with_split_proof(hole, variable);
+                self.holes.push_back(ProofHole {
+                    hole: zero_proof,
+                    disequality: zero_conclusion,
+                    previous_split_variable: variable,
+                });
+                self.holes.push_back(ProofHole {
+                    hole: successor_proof,
+                    disequality: successor_conclusion,
+                    previous_split_variable: variable,
+                });
+            }
         }
 
-        let split_variable = next_split_variable(&disequality, previous_split_variable);
-        let (zero_proof, successor_proof) = fill_hole_with_split_proof(hole, split_variable);
-        let zero_disequality = disequality.at_variable_zero(split_variable);
-        self.holes
-            .push_back((zero_proof, zero_disequality, split_variable));
-
-        let successor_disequality = disequality.into_at_variable_plus_one(split_variable);
-        self.holes
-            .push_back((successor_proof, successor_disequality, split_variable));
         Some(())
+    }
+}
+
+enum ProofStepResult {
+    NotStrictlyMonomiallyComparable,
+    FoundRoot,
+    SuccessorNonZero,
+    Split {
+        variable: u32,
+        zero_conclusion: PolynomialDisequality,
+        successor_conclusion: PolynomialDisequality,
+    },
+}
+
+fn search_proof_step(
+    disequality: PolynomialDisequality,
+    previous_split_variable: u32,
+) -> ProofStepResult {
+    let disequality = disequality.reduce();
+    if disequality.has_zero_root() {
+        ProofStepResult::FoundRoot
+    } else if disequality.is_in_successor_non_zero_form() {
+        ProofStepResult::SuccessorNonZero
+    } else if !disequality.is_strictly_monomially_comparable() {
+        ProofStepResult::NotStrictlyMonomiallyComparable
+    } else {
+        let split_variable = next_split_variable(&disequality, previous_split_variable);
+        ProofStepResult::Split {
+            variable: split_variable,
+            zero_conclusion: disequality.at_variable_zero(split_variable),
+            successor_conclusion: disequality.into_at_variable_plus_one(split_variable),
+        }
     }
 }
 
@@ -82,22 +139,6 @@ fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofAttem
     for _ in proof_search_iter {}
 
     ProofAttempt::try_from(proof).expect("proof attempt has no holes")
-}
-
-fn try_fill_hole_with_non_split_proof(
-    hole: &mut ProofInProgress,
-    disequality: &PolynomialDisequality,
-) -> Result<(), ()> {
-    *hole = if disequality.has_zero_root() {
-        ProofInProgress::FoundRoot
-    } else if disequality.is_in_successor_non_zero_form() {
-        ProofInProgress::SuccessorNonZero
-    } else if !disequality.is_strictly_monomially_comparable() {
-        ProofInProgress::NotStrictlyMonomiallyComparable
-    } else {
-        return Err(());
-    };
-    Ok(())
 }
 
 fn next_split_variable(disequality: &PolynomialDisequality, previous_variable: u32) -> u32 {
