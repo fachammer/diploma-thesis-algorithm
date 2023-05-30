@@ -48,6 +48,10 @@
       #term-input > * {
         align-self: center;
       }
+
+      .term-input[data-valid="false"] {
+        border-color: red;
+      }
     </style>
   </head>
 
@@ -65,9 +69,9 @@
 
     <div id="term-input" class="input-grid">
       <span id="prefix">as terms</span>
-      <input id="left-term" type="text" value="0" />
+      <input id="left-term" class="term-input" type="text" value="0" />
       <span id="not-equal-sign">≠</span>
-      <input id="right-term" type="text" value="0" />
+      <input id="right-term" class="term-input" type="text" value="0" />
 
       <span>as polynomials</span>
       <span id="left-polynomial"></span>

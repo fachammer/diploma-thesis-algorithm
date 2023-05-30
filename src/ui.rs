@@ -95,62 +95,84 @@ fn update(
     let left: Result<Term, _> = left_value.parse();
     let right: Result<Term, _> = right_value.parse();
 
-    let left = left.expect("left term must be valid");
-    let right = right.expect("right term must be valid");
+    match (left, right) {
+        (Ok(left), Ok(right)) => {
+            let left_term_element = document.html_element_by_id_unchecked("left-term");
+            left_term_element
+                .set_attribute("data-valid", "true")
+                .expect("set attribute should not fail");
+            let right_term_element = document.html_element_by_id_unchecked("right-term");
+            right_term_element
+                .set_attribute("data-valid", "true")
+                .expect("set attribute should not fail");
 
-    let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
-    left_polynomial_view.set_text_content(None);
-    let left_polynomial = Polynomial::from(left.clone());
-    left_polynomial_view.append_child_unchecked(&left_polynomial.render(document));
+            let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
+            left_polynomial_view.set_text_content(None);
+            let left_polynomial = Polynomial::from(left.clone());
+            left_polynomial_view.append_child_unchecked(&left_polynomial.render(document));
 
-    let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
-    right_polynomial_view.set_text_content(None);
-    let right_polynomial = Polynomial::from(right.clone());
-    right_polynomial_view.append_child_unchecked(&right_polynomial.render(document));
+            let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
+            right_polynomial_view.set_text_content(None);
+            let right_polynomial = Polynomial::from(right.clone());
+            right_polynomial_view.append_child_unchecked(&right_polynomial.render(document));
 
-    let disequality = TermDisequality::from_terms(left, right);
+            let disequality = TermDisequality::from_terms(left, right);
 
-    worker
-        .borrow()
-        .post_message(
-            &serde_wasm_bindgen::to_value(&SearchProof { disequality })
-                .expect("to value should work"),
-        )
-        .expect("post message should work");
+            worker
+                .borrow()
+                .post_message(
+                    &serde_wasm_bindgen::to_value(&SearchProof { disequality })
+                        .expect("to value should work"),
+                )
+                .expect("post message should work");
 
-    let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
-        let document = unchecked_document();
-        let start_time = unchecked_now();
+            let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
+                let document = unchecked_document();
+                let start_time = unchecked_now();
 
-        let proof_view = document.html_element_by_id_unchecked("proof-view");
-        proof_view.set_text_content(None);
-        let proof_result_pointer = event.data().as_f64().expect("data must be a number") as u32;
+                let proof_view = document.html_element_by_id_unchecked("proof-view");
+                proof_view.set_text_content(None);
+                let proof_result_pointer =
+                    event.data().as_f64().expect("data must be a number") as u32;
 
-        let proof_result = unsafe {
-            Box::from_raw(
-                proof_result_pointer as *mut Result<CompletePolynomialProof, ProofAttempt>,
-            )
-        };
+                let proof_result = unsafe {
+                    Box::from_raw(
+                        proof_result_pointer as *mut Result<CompletePolynomialProof, ProofAttempt>,
+                    )
+                };
 
-        match *proof_result {
-            Ok(proof) => {
-                proof_view.append_child_unchecked(&proof.render(&document));
-            }
-            Err(proof_attempt) => {
-                let proof_attempt =
-                    serde_wasm_bindgen::to_value(&proof_attempt).expect("serialize must succeed");
-                console::log_2(&"proof attempt: ".into(), &proof_attempt)
-            }
+                match *proof_result {
+                    Ok(proof) => {
+                        proof_view.append_child_unchecked(&proof.render(&document));
+                    }
+                    Err(proof_attempt) => {
+                        let proof_attempt = serde_wasm_bindgen::to_value(&proof_attempt)
+                            .expect("serialize must succeed");
+                        console::log_2(&"proof attempt: ".into(), &proof_attempt)
+                    }
+                }
+                let end_time = unchecked_now();
+                console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
+            }) as Box<dyn FnMut(_)>);
+            worker
+                .borrow()
+                .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
+
+            // TODO: fix this leakage
+            worker_callback.forget();
         }
-        let end_time = unchecked_now();
-        console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
-    }) as Box<dyn FnMut(_)>);
-    worker
-        .borrow()
-        .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
+        (left, right) => {
+            let left_term_element = document.html_element_by_id_unchecked("left-term");
+            left_term_element
+                .set_attribute("data-valid", &format!("{}", left.is_ok()))
+                .expect("set attribute should not fail");
 
-    // TODO: fix this leakage
-    worker_callback.forget();
+            let right_term_element = document.html_element_by_id_unchecked("right-term");
+            right_term_element
+                .set_attribute("data-valid", &format!("{}", right.is_ok()))
+                .expect("set attribute should not fail");
+        }
+    }
 }
 
 trait NodeUnchecked {
