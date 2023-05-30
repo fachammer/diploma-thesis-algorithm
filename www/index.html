@@ -1,9 +1,52 @@
 <!DOCTYPE html>
 
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>WASM test</title>
+    <style>
+      @font-face {
+        font-family: "Roboto";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url("fonts/Roboto-Regular.ttf");
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        font-family: "Roboto", sans-serif;
+      }
+
+      li {
+        margin-left: 20px;
+        list-style: none;
+      }
+
+      html {
+        display: block;
+      }
+
+      body {
+        margin: 0 auto;
+        max-width: 800px;
+      }
+
+      #left-term {
+        text-align: right;
+      }
+
+      #term-input {
+        display: grid;
+        grid-template-columns: max-content 1fr max-content 1fr;
+        column-gap: 10px;
+      }
+
+      #term-input > * {
+        align-self: center;
+      }
+    </style>
   </head>
 
   <body>
@@ -18,16 +61,13 @@
       init();
     </script>
 
-    <div>
-      <label for="left-term">left term input</label>
+    <div id="term-input">
+      <span id="prefix">∀x ∀y ∀z</span>
       <input id="left-term" type="text" value="0" />
-    </div>
-    <div>
-      <label for="left-term">right term input</label>
+      <span id="not-equal-sign">≠</span>
       <input id="right-term" type="text" value="0" />
     </div>
     <div>
-      <label for="proof-view">proof view</label>
       <ul>
         <li id="proof-view"></li>
       </ul>
