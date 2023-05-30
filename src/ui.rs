@@ -112,23 +112,6 @@ fn update(
         &serde_wasm_bindgen::to_value(&right).unwrap(),
     );
 
-    let left_term_view = document.html_element_by_id_unchecked("left-term-view");
-    left_term_view.set_text_content(None);
-    left_term_view.append_child_unchecked(&TermTreeView(&left).render(&unchecked_document()));
-    let right_term_view = document.html_element_by_id_unchecked("right-term-view");
-    right_term_view.set_text_content(None);
-    right_term_view.append_child_unchecked(&TermTreeView(&right).render(&unchecked_document()));
-
-    let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
-    left_polynomial_view.set_text_content(None);
-    let left_polynomial = Polynomial::from(left.clone());
-    left_polynomial_view.append_child_unchecked(&left_polynomial.render(document));
-
-    let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
-    right_polynomial_view.set_text_content(None);
-    let right_polynomial = Polynomial::from(right.clone());
-    right_polynomial_view.append_child_unchecked(&right_polynomial.render(document));
-
     let disequality = TermDisequality::from_terms(left, right);
 
     worker
