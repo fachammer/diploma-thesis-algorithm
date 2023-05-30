@@ -30,17 +30,19 @@
 
       body {
         margin: 0 auto;
-        max-width: 800px;
       }
 
-      #left-term {
+      #left-term,
+      #left-polynomial {
         text-align: right;
       }
 
-      #term-input {
+      .input-grid {
         display: grid;
         grid-template-columns: max-content 1fr max-content 1fr;
         column-gap: 10px;
+        max-width: 800px;
+        margin: 0 auto;
       }
 
       #term-input > * {
@@ -61,16 +63,17 @@
       init();
     </script>
 
-    <div id="term-input">
-      <span id="prefix">∀x ∀y ∀z</span>
+    <div id="term-input" class="input-grid">
+      <span id="prefix">as terms</span>
       <input id="left-term" type="text" value="0" />
       <span id="not-equal-sign">≠</span>
       <input id="right-term" type="text" value="0" />
+
+      <span>as polynomials</span>
+      <span id="left-polynomial"></span>
+      <span id="not-equal-sign">≠</span>
+      <span id="right-polynomial"></span>
     </div>
-    <div>
-      <ul>
-        <li id="proof-view"></li>
-      </ul>
-    </div>
+    <div id="proof-view"></div>
   </body>
 </html>

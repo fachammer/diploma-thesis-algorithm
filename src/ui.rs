@@ -92,25 +92,21 @@ fn update(
     left_value: String,
     right_value: String,
 ) {
-    console::log_4(
-        &"as strings: ".into(),
-        &left_value.as_str().into(),
-        &"≠".into(),
-        &right_value.as_str().into(),
-    );
-
     let left: Result<Term, _> = left_value.parse();
     let right: Result<Term, _> = right_value.parse();
 
     let left = left.expect("left term must be valid");
     let right = right.expect("right term must be valid");
 
-    console::log_4(
-        &"as terms: ".into(),
-        &serde_wasm_bindgen::to_value(&left).unwrap(),
-        &"≠".into(),
-        &serde_wasm_bindgen::to_value(&right).unwrap(),
-    );
+    let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
+    left_polynomial_view.set_text_content(None);
+    let left_polynomial = Polynomial::from(left.clone());
+    left_polynomial_view.append_child_unchecked(&left_polynomial.render(document));
+
+    let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
+    right_polynomial_view.set_text_content(None);
+    let right_polynomial = Polynomial::from(right.clone());
+    right_polynomial_view.append_child_unchecked(&right_polynomial.render(document));
 
     let disequality = TermDisequality::from_terms(left, right);
 
