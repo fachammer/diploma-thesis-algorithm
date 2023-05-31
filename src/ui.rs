@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use disequality::TermDisequality;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, __private::doc};
 use term::Term;
 use wasm_bindgen::{memory, prelude::*};
 use web_sys::{
@@ -207,6 +207,17 @@ impl NodeUnchecked for Node {
     }
 }
 
+trait ElementUnchecked {
+    fn set_attribute_unchecked(&self, name: &str, value: &str);
+}
+
+impl ElementUnchecked for Element {
+    fn set_attribute_unchecked(&self, name: &str, value: &str) {
+        self.set_attribute(name, value)
+            .expect("set attribute must succeed");
+    }
+}
+
 trait DocumentUnchecked {
     fn create_element_unchecked(&self, element: &str) -> Element;
 
@@ -214,6 +225,10 @@ trait DocumentUnchecked {
 
     fn input_by_id_unchecked(&self, id: &str) -> HtmlInputElement {
         self.html_element_by_id_unchecked(id).unchecked_into()
+    }
+
+    fn create_div_unchecked(&self) -> HtmlElement {
+        self.create_element_unchecked("div").unchecked_into()
     }
 }
 
@@ -440,45 +455,8 @@ impl RenderNode for CompletePolynomialProof {
     fn render(&self, document: &Document) -> Node {
         match self {
             crate::proof::CompletePolynomialProof::SuccessorNonZero { conclusion } => {
-                console::log_1(
-                    &format!(
-                        "left polynomial monomials: {}",
-                        conclusion.left.0.support().count()
-                    )
-                    .into(),
-                );
-
-                document
-                    .create_text_node(&format!(
-                        "{} ≠ {}: successor non zero",
-                        PolynomialDisplay {
-                            polynomial: &conclusion.left,
-                            variable_mapping: &|v| String::from(
-                                char::try_from(v).expect("must be a valid char")
-                            ),
-                            number_of_largest_monomials: 1,
-                            number_of_smallest_monomials: 5
-                        },
-                        PolynomialDisplay {
-                            polynomial: &conclusion.right,
-                            variable_mapping: &|v| String::from(
-                                char::try_from(v).expect("must be a valid char")
-                            ),
-                            number_of_largest_monomials: 1,
-                            number_of_smallest_monomials: 5
-                        },
-                    ))
-                    .into()
-            }
-            crate::proof::CompletePolynomialProof::Split {
-                variable,
-                conclusion,
-                zero_proof,
-                successor_proof,
-            } => {
-                let node = document.create_element_unchecked("span");
-                node.append_child_unchecked(&document.create_text_node(&format!(
-                    "{} ≠ {}: split on {}",
+                let conclusion_text = document.create_text_node(&format!(
+                    "{} ≠ {}",
                     PolynomialDisplay {
                         polynomial: &conclusion.left,
                         variable_mapping: &|v| String::from(
@@ -495,25 +473,82 @@ impl RenderNode for CompletePolynomialProof {
                         number_of_largest_monomials: 1,
                         number_of_smallest_monomials: 5
                     },
+                ));
+                let conclusion_node = document.create_div_unchecked();
+                conclusion_node.set_attribute_unchecked("class", "conclusion");
+                conclusion_node.append_child_unchecked(&conclusion_text);
+
+                let inference_text = document.create_text_node("successor non zero");
+                let inference_node = document.create_div_unchecked();
+                inference_node.set_attribute_unchecked("class", "inference");
+                inference_node.append_child_unchecked(&inference_text);
+
+                let internal_proof_node = document.create_div_unchecked();
+                internal_proof_node.set_attribute_unchecked("class", "proof-node");
+                internal_proof_node.append_child_unchecked(&conclusion_node);
+                internal_proof_node.append_child_unchecked(&inference_node);
+
+                let proof_node = document.create_div_unchecked();
+                proof_node.append_child_unchecked(&internal_proof_node);
+                proof_node.set_attribute_unchecked("class", "proof");
+
+                proof_node.into()
+            }
+            crate::proof::CompletePolynomialProof::Split {
+                variable,
+                conclusion,
+                zero_proof,
+                successor_proof,
+            } => {
+                let conclusion_text = document.create_text_node(&format!(
+                    "{} ≠ {}",
+                    PolynomialDisplay {
+                        polynomial: &conclusion.left,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
+                    },
+                    PolynomialDisplay {
+                        polynomial: &conclusion.right,
+                        variable_mapping: &|v| String::from(
+                            char::try_from(v).expect("must be a valid char")
+                        ),
+                        number_of_largest_monomials: 1,
+                        number_of_smallest_monomials: 5
+                    },
+                ));
+                let conclusion_node = document.create_div_unchecked();
+                conclusion_node.append_child_unchecked(&conclusion_text);
+                conclusion_node.set_attribute_unchecked("class", "conclusion");
+
+                let inference_text = document.create_text_node(&format!(
+                    "split on {}",
                     char::try_from(*variable).expect("must be a valid char")
-                )));
+                ));
+                let inference_node = document.create_div_unchecked();
+                inference_node.append_child_unchecked(&inference_text);
+                inference_node.set_attribute_unchecked("class", "inference");
 
-                let list = document.create_element_unchecked("ul");
-                node.append_child_unchecked(&list);
+                let internal_proof_node = document.create_div_unchecked();
+                internal_proof_node.set_attribute_unchecked("class", "proof-node");
+                internal_proof_node.append_child_unchecked(&conclusion_node);
+                internal_proof_node.append_child_unchecked(&inference_node);
 
-                let left_item = document.create_element_unchecked("li");
-                list.append_child_unchecked(&left_item);
+                let zero_subproof_node = zero_proof.render(document);
+                let successor_subproof_node = successor_proof.render(document);
+                let subproofs_node = document.create_div_unchecked();
+                subproofs_node.set_attribute_unchecked("class", "subproofs");
+                subproofs_node.append_child_unchecked(&zero_subproof_node);
+                subproofs_node.append_child_unchecked(&successor_subproof_node);
 
-                let left_node = zero_proof.render(document);
-                left_item.append_child_unchecked(&left_node);
+                let proof_node = document.create_div_unchecked();
+                proof_node.set_attribute_unchecked("class", "proof");
+                proof_node.append_child_unchecked(&internal_proof_node);
+                proof_node.append_child_unchecked(&subproofs_node);
 
-                let right_item = document.create_element_unchecked("li");
-                list.append_child_unchecked(&right_item);
-
-                let right_node = successor_proof.render(document);
-                right_item.append_child_unchecked(&right_node);
-
-                node.into()
+                proof_node.into()
             }
         }
     }

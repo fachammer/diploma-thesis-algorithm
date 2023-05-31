@@ -84,6 +84,32 @@
       #proof-view[data-visible="false"] {
         visibility: hidden;
       }
+
+      .proof {
+        display: grid;
+        grid-template-rows: max-content max-content auto;
+        row-gap: 10px;
+      }
+
+      .proof .conclusion,
+      .proof .inference {
+        text-align: center;
+      }
+
+      .inference[data-inference-type="successor-non-zero"] {
+        color: red;
+      }
+
+      .proof-node {
+        border: 1px solid black;
+        padding: 5px;
+      }
+
+      .proof > .subproofs {
+        display: grid;
+        grid-template-columns: max-content max-content;
+        column-gap: 10px;
+      }
     </style>
   </head>
 
