@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use disequality::TermDisequality;
-use serde::{Deserialize, Serialize, __private::doc};
+use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::{memory, prelude::*};
 use web_sys::{
@@ -172,6 +172,14 @@ fn update(
                 }
                 let end_time = unchecked_now();
                 console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
+                let window_width = window()
+                    .expect("window must exist")
+                    .inner_width()
+                    .expect("inner width must exist");
+                let window_width = window_width.unchecked_into_f64();
+                let proof_view_scroll_width: f64 = proof_view.scroll_width().into();
+                proof_view
+                    .scroll_to_with_x_and_y((proof_view_scroll_width - window_width) / 2.0, 0.0);
             }) as Box<dyn FnMut(_)>);
             worker
                 .borrow()
@@ -478,9 +486,10 @@ impl RenderNode for CompletePolynomialProof {
                 conclusion_node.set_attribute_unchecked("class", "conclusion");
                 conclusion_node.append_child_unchecked(&conclusion_text);
 
-                let inference_text = document.create_text_node("successor non zero");
+                let inference_text = document.create_text_node("A1");
                 let inference_node = document.create_div_unchecked();
                 inference_node.set_attribute_unchecked("class", "inference");
+                inference_node.set_attribute_unchecked("data-inference-type", "successor-non-zero");
                 inference_node.append_child_unchecked(&inference_text);
 
                 let internal_proof_node = document.create_div_unchecked();
@@ -528,8 +537,9 @@ impl RenderNode for CompletePolynomialProof {
                     char::try_from(*variable).expect("must be a valid char")
                 ));
                 let inference_node = document.create_div_unchecked();
-                inference_node.append_child_unchecked(&inference_text);
                 inference_node.set_attribute_unchecked("class", "inference");
+                inference_node.set_attribute_unchecked("data-inference-type", "split");
+                inference_node.append_child_unchecked(&inference_text);
 
                 let internal_proof_node = document.create_div_unchecked();
                 internal_proof_node.set_attribute_unchecked("class", "proof-node");

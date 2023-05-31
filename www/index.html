@@ -77,7 +77,8 @@
 
       #proof-view {
         display: grid;
-        justify-content: center;
+        overflow: auto;
+        padding: 20px;
       }
 
       #polynomial-view[data-visible="false"],
@@ -87,7 +88,7 @@
 
       .proof {
         display: grid;
-        grid-template-rows: max-content max-content auto;
+        grid-template-rows: max-content auto;
         row-gap: 10px;
       }
 
@@ -96,19 +97,18 @@
         text-align: center;
       }
 
-      .inference[data-inference-type="successor-non-zero"] {
-        color: red;
-      }
-
       .proof-node {
         border: 1px solid black;
         padding: 5px;
       }
 
-      .proof > .subproofs {
+      .subproofs {
         display: grid;
+        overflow: auto;
         grid-template-columns: max-content max-content;
         column-gap: 10px;
+        width: max-content;
+        margin: 0 auto;
       }
     </style>
   </head>
@@ -159,9 +159,11 @@
           <span id="left-polynomial"></span>
           <span>≠</span>
           <span id="right-polynomial"></span>
+
+          <span>proof</span>
         </div>
       </div>
-      <div id="proof-view"></div>
     </main>
+    <div id="proof-view" class="subproofs"></div>
   </body>
 </html>
