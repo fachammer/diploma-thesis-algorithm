@@ -30,12 +30,12 @@ pub(crate) fn setup() {
 
     console::log_1(&"hello".into());
 
-    let left_input = document.input_by_id_unchecked("left-term");
+    let left_input = document.input_by_id_unchecked("left-term-input");
     let left_input_on_change = oninput_handler(worker.clone());
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
-    let right_input = document.input_by_id_unchecked("right-term");
+    let right_input = document.input_by_id_unchecked("right-term-input");
     let right_input_on_change = oninput_handler(worker.clone());
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
@@ -49,8 +49,8 @@ pub(crate) fn setup() {
         update(
             &document,
             worker_clone.clone(),
-            left_input.value(),
-            right_input.value(),
+            left_input.clone(),
+            right_input.clone(),
         );
     }) as Box<dyn Fn(_)>);
     worker
@@ -74,10 +74,15 @@ fn unchecked_now() -> f64 {
 fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
     Closure::wrap(Box::new(move |_| {
         let document = unchecked_document();
-        let left_value = document.input_by_id_unchecked("left-term").value();
-        let right_value = document.input_by_id_unchecked("right-term").value();
+        let left_term_element = document.input_by_id_unchecked("left-term-input");
+        let right_term_element = document.input_by_id_unchecked("right-term-input");
 
-        update(&document, worker.clone(), left_value, right_value);
+        update(
+            &document,
+            worker.clone(),
+            left_term_element,
+            right_term_element,
+        );
     }))
 }
 
@@ -89,19 +94,17 @@ pub struct SearchProof {
 fn update(
     document: &Document,
     worker: Rc<RefCell<Worker>>,
-    left_value: String,
-    right_value: String,
+    left_term_element: HtmlInputElement,
+    right_term_element: HtmlInputElement,
 ) {
-    let left: Result<Term, _> = left_value.parse();
-    let right: Result<Term, _> = right_value.parse();
+    let left: Result<Term, _> = left_term_element.value().parse();
+    let right: Result<Term, _> = right_term_element.value().parse();
 
     match (left, right) {
         (Ok(left), Ok(right)) => {
-            let left_term_element = document.html_element_by_id_unchecked("left-term");
             left_term_element
                 .set_attribute("data-valid", "true")
                 .expect("set attribute should not fail");
-            let right_term_element = document.html_element_by_id_unchecked("right-term");
             right_term_element
                 .set_attribute("data-valid", "true")
                 .expect("set attribute should not fail");
@@ -162,12 +165,10 @@ fn update(
             worker_callback.forget();
         }
         (left, right) => {
-            let left_term_element = document.html_element_by_id_unchecked("left-term");
             left_term_element
                 .set_attribute("data-valid", &format!("{}", left.is_ok()))
                 .expect("set attribute should not fail");
 
-            let right_term_element = document.html_element_by_id_unchecked("right-term");
             right_term_element
                 .set_attribute("data-valid", &format!("{}", right.is_ok()))
                 .expect("set attribute should not fail");

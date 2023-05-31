@@ -32,25 +32,52 @@
         margin: 0 auto;
       }
 
-      #left-term,
+      #left-term *,
       #left-polynomial {
         text-align: right;
+      }
+
+      main {
+        max-width: 800px;
+        margin: 0 auto;
       }
 
       .input-grid {
         display: grid;
         grid-template-columns: max-content 1fr max-content 1fr;
         column-gap: 10px;
-        max-width: 800px;
-        margin: 0 auto;
-      }
-
-      #term-input > * {
-        align-self: center;
       }
 
       .term-input[data-valid="false"] {
         border-color: red;
+      }
+
+      input {
+        border: 1px solid grey;
+      }
+
+      .term-input {
+        width: 100%;
+      }
+
+      .validation-message {
+        display: none;
+        color: red;
+        font-size: 0.8em;
+      }
+
+      .term-input[data-valid="false"] + .validation-message {
+        display: block;
+      }
+
+      #polynomial-view,
+      #term-view {
+        display: contents;
+      }
+
+      #proof-view {
+        display: grid;
+        justify-content: center;
       }
     </style>
   </head>
@@ -66,18 +93,44 @@
 
       init();
     </script>
+    <main>
+      <h1>
+        Decidability of Diophantine equations in a theory adjacent to IOpen
+      </h1>
 
-    <div id="term-input" class="input-grid">
-      <span id="prefix">as terms</span>
-      <input id="left-term" class="term-input" type="text" value="0" />
-      <span id="not-equal-sign">≠</span>
-      <input id="right-term" class="term-input" type="text" value="0" />
+      <div class="input-grid">
+        <div id="term-view">
+          <span id="prefix">as terms</span>
+          <div id="left-term">
+            <input
+              id="left-term-input"
+              class="term-input"
+              type="text"
+              value="0"
+            />
+            <div class="validation-message">Please enter a valid term</div>
+          </div>
 
-      <span>as polynomials</span>
-      <span id="left-polynomial"></span>
-      <span id="not-equal-sign">≠</span>
-      <span id="right-polynomial"></span>
-    </div>
+          <span id="not-equal-sign">≠</span>
+
+          <div id="right-term">
+            <input
+              id="right-term-input"
+              class="term-input"
+              type="text"
+              value="0"
+            />
+            <div class="validation-message">Please enter a valid term</div>
+          </div>
+        </div>
+        <div id="polynomial-view">
+          <span>as polynomials</span>
+          <span id="left-polynomial"></span>
+          <span id="not-equal-sign">≠</span>
+          <span id="right-polynomial"></span>
+        </div>
+      </div>
+    </main>
     <div id="proof-view"></div>
   </body>
 </html>
