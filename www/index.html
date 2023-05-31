@@ -79,6 +79,11 @@
         display: grid;
         justify-content: center;
       }
+
+      #polynomial-view[data-visible="false"],
+      #proof-view[data-visible="false"] {
+        visibility: hidden;
+      }
     </style>
   </head>
 
@@ -111,7 +116,7 @@
             <div class="validation-message">Please enter a valid term</div>
           </div>
 
-          <span id="not-equal-sign">≠</span>
+          <span>≠</span>
 
           <div id="right-term">
             <input
@@ -126,11 +131,11 @@
         <div id="polynomial-view">
           <span>as polynomials</span>
           <span id="left-polynomial"></span>
-          <span id="not-equal-sign">≠</span>
+          <span>≠</span>
           <span id="right-polynomial"></span>
         </div>
       </div>
+      <div id="proof-view"></div>
     </main>
-    <div id="proof-view"></div>
   </body>
 </html>

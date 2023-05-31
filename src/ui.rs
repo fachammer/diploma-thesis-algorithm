@@ -39,6 +39,8 @@ pub(crate) fn setup() {
     let right_input_on_change = oninput_handler(worker.clone());
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
+    let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
+    let proof_view = document.html_element_by_id_unchecked("proof-view");
 
     let worker_clone = worker.clone();
     let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
@@ -51,6 +53,8 @@ pub(crate) fn setup() {
             worker_clone.clone(),
             left_input.clone(),
             right_input.clone(),
+            polynomial_view.clone(),
+            proof_view.clone(),
         );
     }) as Box<dyn Fn(_)>);
     worker
@@ -76,12 +80,16 @@ fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
         let document = unchecked_document();
         let left_term_element = document.input_by_id_unchecked("left-term-input");
         let right_term_element = document.input_by_id_unchecked("right-term-input");
+        let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
+        let proof_view = document.html_element_by_id_unchecked("proof-view");
 
         update(
             &document,
             worker.clone(),
             left_term_element,
             right_term_element,
+            polynomial_view,
+            proof_view,
         );
     }))
 }
@@ -96,6 +104,8 @@ fn update(
     worker: Rc<RefCell<Worker>>,
     left_term_element: HtmlInputElement,
     right_term_element: HtmlInputElement,
+    polynomial_view: HtmlElement,
+    proof_view: HtmlElement,
 ) {
     let left: Result<Term, _> = left_term_element.value().parse();
     let right: Result<Term, _> = right_term_element.value().parse();
@@ -107,6 +117,12 @@ fn update(
                 .expect("set attribute should not fail");
             right_term_element
                 .set_attribute("data-valid", "true")
+                .expect("set attribute should not fail");
+            polynomial_view
+                .set_attribute("data-visible", "true")
+                .expect("set attribute should not fail");
+            proof_view
+                .set_attribute("data-visible", "true")
                 .expect("set attribute should not fail");
 
             let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
@@ -168,9 +184,14 @@ fn update(
             left_term_element
                 .set_attribute("data-valid", &format!("{}", left.is_ok()))
                 .expect("set attribute should not fail");
-
             right_term_element
                 .set_attribute("data-valid", &format!("{}", right.is_ok()))
+                .expect("set attribute should not fail");
+            polynomial_view
+                .set_attribute("data-visible", "false")
+                .expect("set attribute should not fail");
+            proof_view
+                .set_attribute("data-visible", "false")
                 .expect("set attribute should not fail");
         }
     }
