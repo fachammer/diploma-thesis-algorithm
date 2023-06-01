@@ -12,7 +12,7 @@ use web_sys::{
 use crate::{
     disequality::{self, PolynomialDisequality},
     polynomial::{Polynomial, PolynomialDisplay},
-    proof::{CompletePolynomialProof, Skeleton},
+    proof::CompletePolynomialProof,
     term,
 };
 
@@ -362,98 +362,6 @@ impl RenderNode for Polynomial {
                 }
             ))
             .into()
-    }
-}
-
-struct ProofTreeView<'a> {
-    skeleton: &'a Skeleton,
-    polynomial_conclusion: PolynomialDisequality,
-}
-
-impl<'a> RenderNode for ProofTreeView<'a> {
-    fn render(&self, document: &Document) -> Node {
-        match self.skeleton {
-            crate::proof::Skeleton::SuccessorNonZero => document
-                .create_text_node(&format!(
-                    "{} ≠ {}: successor non zero",
-                    PolynomialDisplay {
-                        polynomial: &self.polynomial_conclusion.left,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                    PolynomialDisplay {
-                        polynomial: &self.polynomial_conclusion.right,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                ))
-                .into(),
-            crate::proof::Skeleton::Split {
-                variable,
-                zero_skeleton,
-                successor_skeleton,
-            } => {
-                let node = document.create_element_unchecked("span");
-                node.append_child_unchecked(&document.create_text_node(&format!(
-                    "{} ≠ {}: split on {}",
-                    PolynomialDisplay {
-                        polynomial: &self.polynomial_conclusion.left,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                    PolynomialDisplay {
-                        polynomial: &self.polynomial_conclusion.right,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                    char::try_from(*variable).expect("must be a valid char")
-                )));
-
-                let list = document.create_element_unchecked("ul");
-                node.append_child_unchecked(&list);
-
-                let left_item = document.create_element_unchecked("li");
-                list.append_child_unchecked(&left_item);
-
-                let left_node = ProofTreeView {
-                    skeleton: &zero_skeleton.clone(),
-                    polynomial_conclusion: self
-                        .polynomial_conclusion
-                        .at_variable_zero(*variable)
-                        .reduce(),
-                }
-                .render(document);
-                left_item.append_child_unchecked(&left_node);
-
-                let right_item = document.create_element_unchecked("li");
-                list.append_child_unchecked(&right_item);
-
-                let right_node = ProofTreeView {
-                    skeleton: &successor_skeleton.clone(),
-                    polynomial_conclusion: self
-                        .polynomial_conclusion
-                        .clone()
-                        .into_at_variable_plus_one(*variable)
-                        .reduce(),
-                }
-                .render(document);
-                right_item.append_child_unchecked(&right_node);
-
-                node.into()
-            }
-        }
     }
 }
 
