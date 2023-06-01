@@ -17,7 +17,7 @@ pub(crate) enum Skeleton {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum CompletePolynomialProof {
     SuccessorNonZero {
         conclusion: PolynomialDisequality,

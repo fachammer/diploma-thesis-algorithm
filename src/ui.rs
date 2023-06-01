@@ -270,16 +270,16 @@ impl WindowUnchecked for Window {
 }
 
 trait RenderNode {
-    fn render(&self, document: &Document) -> Node;
+    fn render(self, document: &Document) -> Node;
 }
 
 impl RenderNode for Polynomial {
-    fn render(&self, document: &Document) -> Node {
+    fn render(self, document: &Document) -> Node {
         document
             .create_text_node(&format!(
                 "{}",
                 PolynomialDisplay {
-                    polynomial: self,
+                    polynomial: &self,
                     variable_mapping: &|v| String::from(
                         char::try_from(v).expect("variable must be a valid char value")
                     ),
@@ -292,18 +292,18 @@ impl RenderNode for Polynomial {
 }
 
 impl RenderNode for CompletePolynomialProof {
-    fn render(&self, document: &Document) -> Node {
+    fn render(self, document: &Document) -> Node {
         match self {
             CompletePolynomialProof::SuccessorNonZero { conclusion } => {
-                render_proof_leaf(document, conclusion, ProofLeaf::SuccessorNonZero)
+                render_proof_leaf(document, &conclusion, ProofLeaf::SuccessorNonZero)
             }
             CompletePolynomialProof::FoundRoot { conclusion } => {
-                render_proof_leaf(document, conclusion, ProofLeaf::FoundRoot)
+                render_proof_leaf(document, &conclusion, ProofLeaf::FoundRoot)
             }
             CompletePolynomialProof::NotStrictlyMonomiallyComparable { conclusion } => {
                 render_proof_leaf(
                     document,
-                    conclusion,
+                    &conclusion,
                     ProofLeaf::NotStrictlyMonomiallyComparable,
                 )
             }
@@ -339,7 +339,7 @@ impl RenderNode for CompletePolynomialProof {
 
                 let inference_text = document.create_text_node(&format!(
                     "split on {}",
-                    char::try_from(*variable).expect("must be a valid char")
+                    char::try_from(variable).expect("must be a valid char")
                 ));
                 let inference_node = document.create_div_unchecked();
                 inference_node.set_attribute_unchecked("class", "inference");
@@ -350,21 +350,24 @@ impl RenderNode for CompletePolynomialProof {
                 internal_proof_node.append_child_unchecked(&conclusion_node);
                 internal_proof_node.append_child_unchecked(&inference_node);
 
-                let zero_subproof_node = zero_proof.render(document);
-                let successor_subproof_node = successor_proof.render(document);
-                let subproofs_node = document.create_div_unchecked();
-                subproofs_node.set_attribute_unchecked("class", "subproofs");
-                subproofs_node.append_child_unchecked(&zero_subproof_node);
-                subproofs_node.append_child_unchecked(&successor_subproof_node);
-
                 let proof_node = document.create_div_unchecked();
                 proof_node.set_attribute_unchecked("class", "proof");
                 proof_node.set_attribute_unchecked("data-inference-type", "split");
                 proof_node.append_child_unchecked(&internal_proof_node);
-                proof_node.append_child_unchecked(&subproofs_node);
 
                 let proof_node_clone = proof_node.clone();
                 let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                    if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
+                        let document = unchecked_document();
+                        let zero_subproof_node = zero_proof.clone().render(&document);
+                        let successor_subproof_node = successor_proof.clone().render(&document);
+                        let subproofs_node = document.create_div_unchecked();
+                        subproofs_node.set_attribute_unchecked("class", "subproofs");
+                        subproofs_node.append_child_unchecked(&zero_subproof_node);
+                        subproofs_node.append_child_unchecked(&successor_subproof_node);
+                        proof_node_clone.append_child_unchecked(&subproofs_node);
+                    }
+
                     proof_node_clone
                         .toggle_attribute("data-expanded")
                         .expect("toggle attribute should work");
