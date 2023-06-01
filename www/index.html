@@ -94,6 +94,15 @@
         row-gap: 10px;
       }
 
+      .proof[data-inference-type="split"] > .proof-node:hover {
+        background-color: grey;
+        cursor: pointer;
+      }
+
+      .proof:not([data-expanded]) > .subproofs {
+        display: none;
+      }
+
       .proof .conclusion,
       .proof .inference {
         text-align: center;

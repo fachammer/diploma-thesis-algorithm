@@ -5,15 +5,14 @@ use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::{memory, prelude::*};
 use web_sys::{
-    console, window, Document, Element, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
-    Node, Window, Worker,
+    console, window, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent,
+    MessageEvent, Node, Window, Worker,
 };
 
 use crate::{
     disequality::{self, PolynomialDisequality},
     polynomial::{Polynomial, PolynomialDisplay},
     proof::{CompletePolynomialProof, Skeleton},
-    proof_search::ProofAttempt,
     term,
 };
 
@@ -509,7 +508,6 @@ impl RenderNode for CompletePolynomialProof {
                 ));
                 let inference_node = document.create_div_unchecked();
                 inference_node.set_attribute_unchecked("class", "inference");
-                inference_node.set_attribute_unchecked("data-inference-type", "split");
                 inference_node.append_child_unchecked(&inference_text);
 
                 let internal_proof_node = document.create_div_unchecked();
@@ -526,8 +524,25 @@ impl RenderNode for CompletePolynomialProof {
 
                 let proof_node = document.create_div_unchecked();
                 proof_node.set_attribute_unchecked("class", "proof");
+                proof_node.set_attribute_unchecked("data-inference-type", "split");
                 proof_node.append_child_unchecked(&internal_proof_node);
                 proof_node.append_child_unchecked(&subproofs_node);
+
+                let proof_node_clone = proof_node.clone();
+                let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                    proof_node_clone
+                        .toggle_attribute("data-expanded")
+                        .expect("toggle attribute should work");
+                })
+                    as Box<dyn FnMut(Event)>);
+                internal_proof_node
+                    .add_event_listener_with_callback(
+                        "click",
+                        expand_button_callback.as_ref().unchecked_ref(),
+                    )
+                    .expect("add event listener should work");
+                // TODO: fix this leakage
+                expand_button_callback.forget();
 
                 proof_node.into()
             }
@@ -589,7 +604,6 @@ fn render_proof_leaf(
     let inference_text = document.create_text_node(&proof_leaf.to_string());
     let inference_node = document.create_div_unchecked();
     inference_node.set_attribute_unchecked("class", "inference");
-    inference_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
     inference_node.append_child_unchecked(&inference_text);
 
     let internal_proof_node = document.create_div_unchecked();
@@ -598,8 +612,9 @@ fn render_proof_leaf(
     internal_proof_node.append_child_unchecked(&inference_node);
 
     let proof_node = document.create_div_unchecked();
-    proof_node.append_child_unchecked(&internal_proof_node);
     proof_node.set_attribute_unchecked("class", "proof");
+    proof_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
+    proof_node.append_child_unchecked(&internal_proof_node);
 
     proof_node.into()
 }
