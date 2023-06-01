@@ -31,8 +31,10 @@ pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt
 
 pub fn search_complete_proof(
     disequality: &TermDisequality,
-) -> Result<CompletePolynomialProof, ProofAttempt> {
-    let proof = search_proof(disequality)?;
+) -> Result<CompletePolynomialProof, CompletePolynomialProof> {
+    let proof = search_proof(disequality).map_err(|attempt| {
+        CompletePolynomialProof::from((attempt, PolynomialDisequality::from(disequality.clone())))
+    })?;
     Ok(CompletePolynomialProof::from(proof))
 }
 

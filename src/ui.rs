@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
@@ -156,7 +156,8 @@ fn update(
 
                 let proof_result = unsafe {
                     Box::from_raw(
-                        proof_result_pointer as *mut Result<CompletePolynomialProof, ProofAttempt>,
+                        proof_result_pointer
+                            as *mut Result<CompletePolynomialProof, CompletePolynomialProof>,
                     )
                 };
 
@@ -165,9 +166,7 @@ fn update(
                         proof_view.append_child_unchecked(&proof.render(&document));
                     }
                     Err(proof_attempt) => {
-                        let proof_attempt = serde_wasm_bindgen::to_value(&proof_attempt)
-                            .expect("serialize must succeed");
-                        console::log_2(&"proof attempt: ".into(), &proof_attempt)
+                        proof_view.append_child_unchecked(&proof_attempt.render(&document));
                     }
                 }
                 let end_time = unchecked_now();
@@ -462,48 +461,20 @@ impl<'a> RenderNode for ProofTreeView<'a> {
 impl RenderNode for CompletePolynomialProof {
     fn render(&self, document: &Document) -> Node {
         match self {
-            crate::proof::CompletePolynomialProof::SuccessorNonZero { conclusion } => {
-                let conclusion_text = document.create_text_node(&format!(
-                    "{} ≠ {}",
-                    PolynomialDisplay {
-                        polynomial: &conclusion.left,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                    PolynomialDisplay {
-                        polynomial: &conclusion.right,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
-                    },
-                ));
-                let conclusion_node = document.create_div_unchecked();
-                conclusion_node.set_attribute_unchecked("class", "conclusion");
-                conclusion_node.append_child_unchecked(&conclusion_text);
-
-                let inference_text = document.create_text_node("A1");
-                let inference_node = document.create_div_unchecked();
-                inference_node.set_attribute_unchecked("class", "inference");
-                inference_node.set_attribute_unchecked("data-inference-type", "successor-non-zero");
-                inference_node.append_child_unchecked(&inference_text);
-
-                let internal_proof_node = document.create_div_unchecked();
-                internal_proof_node.set_attribute_unchecked("class", "proof-node");
-                internal_proof_node.append_child_unchecked(&conclusion_node);
-                internal_proof_node.append_child_unchecked(&inference_node);
-
-                let proof_node = document.create_div_unchecked();
-                proof_node.append_child_unchecked(&internal_proof_node);
-                proof_node.set_attribute_unchecked("class", "proof");
-
-                proof_node.into()
+            CompletePolynomialProof::SuccessorNonZero { conclusion } => {
+                render_proof_leaf(document, conclusion, ProofLeaf::SuccessorNonZero)
             }
-            crate::proof::CompletePolynomialProof::Split {
+            CompletePolynomialProof::FoundRoot { conclusion } => {
+                render_proof_leaf(document, conclusion, ProofLeaf::FoundRoot)
+            }
+            CompletePolynomialProof::NotStrictlyMonomiallyComparable { conclusion } => {
+                render_proof_leaf(
+                    document,
+                    conclusion,
+                    ProofLeaf::NotStrictlyMonomiallyComparable,
+                )
+            }
+            CompletePolynomialProof::Split {
                 variable,
                 conclusion,
                 zero_proof,
@@ -562,4 +533,73 @@ impl RenderNode for CompletePolynomialProof {
             }
         }
     }
+}
+
+enum ProofLeaf {
+    SuccessorNonZero,
+    FoundRoot,
+    NotStrictlyMonomiallyComparable,
+}
+
+impl ProofLeaf {
+    fn inference_type(&self) -> String {
+        String::from(match self {
+            ProofLeaf::SuccessorNonZero => "successor-non-zero",
+            ProofLeaf::FoundRoot => "found-root",
+            ProofLeaf::NotStrictlyMonomiallyComparable => "not-strictly-monomially-comparable",
+        })
+    }
+}
+
+impl Display for ProofLeaf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProofLeaf::SuccessorNonZero => write!(f, "A1"),
+            ProofLeaf::FoundRoot => write!(f, "found root"),
+            ProofLeaf::NotStrictlyMonomiallyComparable => {
+                write!(f, "not strictly monomially comparable")
+            }
+        }
+    }
+}
+fn render_proof_leaf(
+    document: &Document,
+    conclusion: &PolynomialDisequality,
+    proof_leaf: ProofLeaf,
+) -> Node {
+    let conclusion_text = document.create_text_node(&format!(
+        "{} ≠ {}",
+        PolynomialDisplay {
+            polynomial: &conclusion.left,
+            variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
+            number_of_largest_monomials: 1,
+            number_of_smallest_monomials: 5
+        },
+        PolynomialDisplay {
+            polynomial: &conclusion.right,
+            variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
+            number_of_largest_monomials: 1,
+            number_of_smallest_monomials: 5
+        },
+    ));
+    let conclusion_node = document.create_div_unchecked();
+    conclusion_node.set_attribute_unchecked("class", "conclusion");
+    conclusion_node.append_child_unchecked(&conclusion_text);
+
+    let inference_text = document.create_text_node(&proof_leaf.to_string());
+    let inference_node = document.create_div_unchecked();
+    inference_node.set_attribute_unchecked("class", "inference");
+    inference_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
+    inference_node.append_child_unchecked(&inference_text);
+
+    let internal_proof_node = document.create_div_unchecked();
+    internal_proof_node.set_attribute_unchecked("class", "proof-node");
+    internal_proof_node.append_child_unchecked(&conclusion_node);
+    internal_proof_node.append_child_unchecked(&inference_node);
+
+    let proof_node = document.create_div_unchecked();
+    proof_node.append_child_unchecked(&internal_proof_node);
+    proof_node.set_attribute_unchecked("class", "proof");
+
+    proof_node.into()
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     disequality::PolynomialDisequality, disequality::TermDisequality, polynomial::Polynomial,
-    substitution::Substitution, term::Term,
+    proof_search::ProofAttempt, substitution::Substitution, term::Term,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -20,6 +20,12 @@ pub(crate) enum Skeleton {
 #[derive(Serialize, Deserialize)]
 pub enum CompletePolynomialProof {
     SuccessorNonZero {
+        conclusion: PolynomialDisequality,
+    },
+    FoundRoot {
+        conclusion: PolynomialDisequality,
+    },
+    NotStrictlyMonomiallyComparable {
         conclusion: PolynomialDisequality,
     },
     Split {
@@ -65,6 +71,40 @@ impl From<Proof> for CompletePolynomialProof {
                     successor_proof: Box::new(Self::from(successor_proof)),
                 }
             }
+        }
+    }
+}
+
+impl From<(ProofAttempt, PolynomialDisequality)> for CompletePolynomialProof {
+    fn from(attempt: (ProofAttempt, PolynomialDisequality)) -> Self {
+        match attempt.0 {
+            ProofAttempt::NotStrictlyMonomiallyComparable => {
+                CompletePolynomialProof::NotStrictlyMonomiallyComparable {
+                    conclusion: attempt.1,
+                }
+            }
+            ProofAttempt::FoundRoot => CompletePolynomialProof::FoundRoot {
+                conclusion: attempt.1,
+            },
+            ProofAttempt::SuccessorNonZero => CompletePolynomialProof::SuccessorNonZero {
+                conclusion: attempt.1,
+            },
+            ProofAttempt::Split {
+                variable,
+                zero_proof,
+                successor_proof,
+            } => CompletePolynomialProof::Split {
+                variable,
+                conclusion: attempt.1.clone(),
+                zero_proof: Box::new(Self::from((
+                    *zero_proof,
+                    attempt.1.at_variable_zero(variable),
+                ))),
+                successor_proof: Box::new(Self::from((
+                    *successor_proof,
+                    attempt.1.into_at_variable_plus_one(variable),
+                ))),
+            },
         }
     }
 }
