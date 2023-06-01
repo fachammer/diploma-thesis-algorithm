@@ -405,7 +405,7 @@ impl Display for ProofLeaf {
             ProofLeaf::SuccessorNonZero => write!(f, "A1"),
             ProofLeaf::FoundRoot => write!(f, "found root"),
             ProofLeaf::NotStrictlyMonomiallyComparable => {
-                write!(f, "not strictly monomially comparable")
+                write!(f, "≸")
             }
         }
     }
