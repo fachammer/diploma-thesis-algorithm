@@ -38,8 +38,6 @@ pub(crate) fn setup() {
     let right_input_on_change = oninput_handler(worker.clone());
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
-    let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
-    let proof_view = document.html_element_by_id_unchecked("proof-view");
 
     let worker_clone = worker.clone();
     let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
@@ -47,14 +45,7 @@ pub(crate) fn setup() {
         assert_eq!(event.data(), "ready");
         worker_clone.borrow().set_onmessage(None);
 
-        update(
-            &document,
-            worker_clone.clone(),
-            left_input.clone(),
-            right_input.clone(),
-            polynomial_view.clone(),
-            proof_view.clone(),
-        );
+        update(worker_clone.clone());
     }) as Box<dyn Fn(_)>);
     worker
         .borrow()
@@ -76,20 +67,7 @@ fn unchecked_now() -> f64 {
 
 fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
     Closure::wrap(Box::new(move |_| {
-        let document = unchecked_document();
-        let left_term_element = document.input_by_id_unchecked("left-term-input");
-        let right_term_element = document.input_by_id_unchecked("right-term-input");
-        let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
-        let proof_view = document.html_element_by_id_unchecked("proof-view");
-
-        update(
-            &document,
-            worker.clone(),
-            left_term_element,
-            right_term_element,
-            polynomial_view,
-            proof_view,
-        );
+        update(worker.clone());
     }))
 }
 
@@ -98,41 +76,42 @@ pub struct SearchProof {
     pub(crate) disequality: TermDisequality,
 }
 
-fn update(
-    document: &Document,
-    worker: Rc<RefCell<Worker>>,
-    left_term_element: HtmlInputElement,
-    right_term_element: HtmlInputElement,
-    polynomial_view: HtmlElement,
-    proof_view: HtmlElement,
-) {
-    let left: Result<Term, _> = left_term_element.value().parse();
-    let right: Result<Term, _> = right_term_element.value().parse();
+fn update(worker: Rc<RefCell<Worker>>) {
+    let document = unchecked_document();
+    let left_term_element = document.input_by_id_unchecked("left-term-input");
+    let right_term_element = document.input_by_id_unchecked("right-term-input");
+    let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
+    let proof_view = document.html_element_by_id_unchecked("proof-view");
+    let validation_messages_element = document.html_element_by_id_unchecked("validation-messages");
+    let left_term_validation_message_element =
+        document.html_element_by_id_unchecked("left-term-validation-message");
+    let right_term_validation_message_element =
+        document.html_element_by_id_unchecked("right-term-validation-message");
+    let left: Result<Term, _> = left_term_element.text_content().unwrap_or_default().parse();
+    let right: Result<Term, _> = right_term_element
+        .text_content()
+        .unwrap_or_default()
+        .parse();
 
     match (left, right) {
         (Ok(left), Ok(right)) => {
-            left_term_element
-                .set_attribute("data-valid", "true")
-                .expect("set attribute should not fail");
-            right_term_element
-                .set_attribute("data-valid", "true")
-                .expect("set attribute should not fail");
-            polynomial_view
-                .set_attribute("data-visible", "true")
-                .expect("set attribute should not fail");
-            proof_view
-                .set_attribute("data-visible", "true")
-                .expect("set attribute should not fail");
+            left_term_element.set_attribute_unchecked("data-valid", "true");
+            right_term_element.set_attribute_unchecked("data-valid", "true");
+            validation_messages_element.set_attribute_unchecked("data-valid", "true");
+            left_term_validation_message_element.set_attribute_unchecked("data-valid", "true");
+            right_term_validation_message_element.set_attribute_unchecked("data-valid", "true");
+            polynomial_view.set_attribute_unchecked("data-visible", "true");
+            proof_view.set_attribute_unchecked("data-visible", "true");
 
             let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
             left_polynomial_view.set_text_content(None);
             let left_polynomial = Polynomial::from(left.clone());
-            left_polynomial_view.append_child_unchecked(&left_polynomial.render(document));
+            left_polynomial_view.append_child_unchecked(&left_polynomial.render(&document));
 
             let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
             right_polynomial_view.set_text_content(None);
             let right_polynomial = Polynomial::from(right.clone());
-            right_polynomial_view.append_child_unchecked(&right_polynomial.render(document));
+            right_polynomial_view.append_child_unchecked(&right_polynomial.render(&document));
 
             let disequality = TermDisequality::from_terms(left, right);
 
@@ -187,18 +166,15 @@ fn update(
             worker_callback.forget();
         }
         (left, right) => {
-            left_term_element
-                .set_attribute("data-valid", &format!("{}", left.is_ok()))
-                .expect("set attribute should not fail");
-            right_term_element
-                .set_attribute("data-valid", &format!("{}", right.is_ok()))
-                .expect("set attribute should not fail");
-            polynomial_view
-                .set_attribute("data-visible", "false")
-                .expect("set attribute should not fail");
-            proof_view
-                .set_attribute("data-visible", "false")
-                .expect("set attribute should not fail");
+            validation_messages_element.set_attribute_unchecked("data-valid", "false");
+            left_term_element.set_attribute_unchecked("data-valid", &left.is_ok().to_string());
+            right_term_element.set_attribute_unchecked("data-valid", &right.is_ok().to_string());
+            left_term_validation_message_element
+                .set_attribute_unchecked("data-valid", &left.is_ok().to_string());
+            right_term_validation_message_element
+                .set_attribute_unchecked("data-valid", &right.is_ok().to_string());
+            polynomial_view.set_attribute_unchecked("data-visible", "false");
+            proof_view.set_attribute_unchecked("data-visible", "false");
         }
     }
 }

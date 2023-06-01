@@ -34,8 +34,9 @@
         margin: 0 auto;
       }
 
-      #left-term *,
-      #left-polynomial {
+      #left-term-input,
+      #left-polynomial,
+      #left-term-validation-message {
         text-align: right;
       }
 
@@ -47,29 +48,54 @@
       .input-grid {
         display: grid;
         grid-template-columns: max-content 1fr max-content 1fr;
+        grid-template-rows: auto max-content;
         column-gap: 10px;
+        row-gap: 10px;
+      }
+
+      #left-term-input,
+      #right-term-input,
+      #left-polynomial,
+      #right-polynomial,
+      .disequality-sign {
+        align-self: center;
       }
 
       .term-input[data-valid="false"] {
         border-color: red;
       }
 
-      input {
-        border: 1px solid grey;
-      }
-
       .term-input {
         width: 100%;
+        resize: none;
+        border: 1px solid grey;
+        line-break: anywhere;
+        align-self: center;
       }
 
-      .validation-message {
+      #left-polynomial,
+      #right-polynomial {
+        line-break: anywhere;
+      }
+
+      #validation-messages {
         display: none;
+      }
+
+      #validation-messages[data-valid="false"] {
+        display: contents;
+      }
+
+      .validation-message:not([data-valid="false"]) {
+        visibility: hidden;
+      }
+
+      .validation-message[data-valid="false"] {
+        visibility: visible;
+        display: block;
         color: red;
         font-size: 0.8em;
-      }
-
-      .term-input[data-valid="false"] + .validation-message {
-        display: block;
+        align-self: center;
       }
 
       #polynomial-view,
@@ -141,33 +167,41 @@
 
       <div class="input-grid">
         <div id="term-view">
-          <span id="prefix">as terms</span>
-          <div id="left-term">
-            <input
-              id="left-term-input"
-              class="term-input"
-              type="text"
-              value="0"
-            />
-            <div class="validation-message">Please enter a valid term</div>
+          <span class="label">as terms</span>
+          <div
+            contenteditable
+            id="left-term-input"
+            class="term-input"
+            type="text"
+          >
+            0
           </div>
 
-          <span>≠</span>
+          <span class="disequality-sign">≠</span>
 
-          <div id="right-term">
-            <input
-              id="right-term-input"
-              class="term-input"
-              type="text"
-              value="0"
-            />
-            <div class="validation-message">Please enter a valid term</div>
+          <div
+            contenteditable
+            id="right-term-input"
+            class="term-input"
+            type="text"
+          >
+            0
+          </div>
+          <div id="validation-messages">
+            <span>&nbsp;</span>
+            <div id="left-term-validation-message" class="validation-message">
+              Please enter a valid term
+            </div>
+            <span>&nbsp;</span>
+            <div id="right-term-validation-message" class="validation-message">
+              Please enter a valid term
+            </div>
           </div>
         </div>
         <div id="polynomial-view">
-          <span>as polynomials</span>
+          <span class="label">as polynomials</span>
           <span id="left-polynomial"></span>
-          <span>≠</span>
+          <span class="disequality-sign">≠</span>
           <span id="right-polynomial"></span>
 
           <span>proof</span>
