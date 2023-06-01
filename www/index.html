@@ -21,6 +21,15 @@
         font-family: "Roboto", sans-serif;
       }
 
+      a {
+        text-decoration: none;
+        color: #2077c2;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
       li {
         margin-left: 20px;
         list-style: none;
@@ -43,11 +52,55 @@
       main {
         max-width: 800px;
         margin: 0 auto;
+        padding: 15px;
       }
 
       h1 {
         font-size: 1.5em;
-        margin-bottom: 15px;
+        margin-bottom: 10px;
+      }
+
+      h2 {
+        font-size: 1.2em;
+        margin-bottom: 10px;
+      }
+
+      #introduction {
+        margin: 10px 0;
+      }
+
+      #axioms {
+        margin: 10px 0;
+      }
+
+      p {
+        margin: 10px 0;
+      }
+
+      #example-inputs {
+        margin: 15px 0;
+      }
+
+      #example-buttons {
+        display: flex;
+        gap: 5px;
+        flex-flow: row wrap;
+      }
+
+      #example-buttons > button {
+        flex: 1 2 1;
+      }
+
+      button {
+        background-color: white;
+        border: 1px solid black;
+        padding: 5px;
+        font-size: 1em;
+      }
+
+      button:hover {
+        background-color: grey;
+        cursor: pointer;
       }
 
       .input-grid {
@@ -179,10 +232,80 @@
       <h1>
         Decidability of Diophantine equations in a theory adjacent to IOpen
       </h1>
+      <article id="introduction">
+        <p>
+          We work in a language with zero (0), successor (S), addition (+) and
+          multiplication (*). Now consider the weak theory of arithmetic
+          consisting of the axioms
+        </p>
+        <ul id="axioms">
+          <li>∀x x + 0 = x</li>
+          <li>∀x∀y x + Sy = S(x + y)</li>
+          <li>∀x x * 0 = 0</li>
+          <li>∀x∀y x * Sy = x*y + x</li>
+          <li>∀x∀y∀z x + (y + z) = (x + y) + z</li>
+          <li>∀x∀y x + y = y + x</li>
+          <li>∀x∀y∀z x * (y * z) = (x * y) * z</li>
+          <li>∀x∀y x * y = y * x</li>
+          <li>∀x∀y∀z x * (y + z) = x * y + x * z</li>
+          <li>∀x S(x) ≠ 0</li>
+          <li>∀x (x = 0 ∨ ∃y x = Sy)</li>
+        </ul>
+        <p>
+          Diophantine satisfiablity is decidable for this theory as shown in my
+          <a href="diploma-thesis.pdf">diploma thesis</a>.
+          <!-- TODO: explain Diophantine satisfiability -->
+          <!-- TODO: explain/mention connection between Diophantine satisfiability and decidability of disequalities -->
+          To show this, an intermediate proof calculus with the following rules
+          is introduced
+        </p>
+        <p>
+          <!-- TODO: add inference rules -->
+          <!-- TODO: mention theory allows working with polynomials -->
+          <!-- TODO: mention notion of strict monomial comparability -->
+        </p>
+        <p>
+          In the following you can enter two terms with free variables
+          u,v,w,x,y,z and the algorithm is run and either produces a proof in
+          this proof calculus or gives a proof attempt and a reason why this
+          particular disequality is not provable.
+          <!-- TODO: mention associativity and binding of S, +, * -->
+          <!-- TODO: mention expandability of proofs -->
+        </p>
+      </article>
+
+      <div id="example-inputs">
+        <h2>Examples</h2>
+        <script>
+          function enterTerms(left, right) {
+            const leftTermInput = document.getElementById("left-term-input");
+            const rightTermInput = document.getElementById("right-term-input");
+            leftTermInput.textContent = left;
+            rightTermInput.textContent = right;
+            leftTermInput.oninput();
+            rightTermInput.oninput();
+          }
+        </script>
+        <div id="example-buttons">
+          <button onclick="enterTerms('x*x', 'Sx')">enter x*x ≠ Sx</button>
+          <button onclick="enterTerms('SS0*x', 'S(SS0*y)')">
+            enter SS0*x ≠ S(SS0*y)
+          </button>
+          <button onclick="enterTerms('SS0*x', 'SSSx')">
+            enter SS0*x ≠ SSSx
+          </button>
+          <button onclick="enterTerms('x*y*z+SS0*x', 'S(SS0*y)')">
+            enter x*y*z+SS0*x ≠ S(SS0*y)
+          </button>
+          <button onclick="enterTerms('u*u*v*v*w*w*x*x*y*y*z*z', 'SS0')">
+            enter u*u*v*v*w*w*x*x*y*y*z*z ≠ SS0
+          </button>
+        </div>
+      </div>
 
       <div class="input-grid">
         <div id="term-view">
-          <span class="label">as terms</span>
+          <span class="label">enter terms</span>
           <div
             contenteditable
             id="left-term-input"
@@ -214,7 +337,7 @@
           </div>
         </div>
         <div id="polynomial-view">
-          <span class="label">as polynomials</span>
+          <span class="label">converted to polynomials</span>
           <span id="left-polynomial" class="polynomial-view"></span>
           <span class="disequality-sign">≠</span>
           <span id="right-polynomial" class="polynomial-view"></span>
