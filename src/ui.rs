@@ -11,7 +11,7 @@ use web_sys::{
 
 use crate::{
     disequality::{self, PolynomialDisequality},
-    polynomial::{Polynomial, PolynomialDisplay},
+    polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     term,
 };
@@ -251,19 +251,22 @@ trait RenderNode {
 
 impl RenderNode for Polynomial {
     fn render(self, document: &Document) -> Node {
-        document
-            .create_text_node(&format!(
-                "{}",
-                PolynomialDisplay {
-                    polynomial: &self,
-                    variable_mapping: &|v| String::from(
-                        char::try_from(v).expect("variable must be a valid char value")
-                    ),
-                    number_of_largest_monomials: 5,
-                    number_of_smallest_monomials: 5
-                }
-            ))
-            .into()
+        let node = document
+            .create_element("span")
+            .expect("create span element should succeed");
+        node.set_inner_html(&format!(
+            "{}",
+            PolynomialDisplay {
+                polynomial: &self,
+                variable_mapping: &|v| String::from(
+                    char::try_from(v).expect("variable must be a valid char value")
+                ),
+                number_of_largest_monomials: 5,
+                number_of_smallest_monomials: 5,
+                exponent_display_style: ExponentDisplayStyle::SuperscriptTag
+            }
+        ));
+        node.into()
     }
 }
 
@@ -290,7 +293,10 @@ impl RenderNode for CompletePolynomialProof {
                 successor_proof,
             } => {
                 let conclusion = conclusion.reduced();
-                let conclusion_text = document.create_text_node(&format!(
+                let conclusion_text = document
+                    .create_element("span")
+                    .expect("create span should work");
+                conclusion_text.set_inner_html(&format!(
                     "{} ≠ {}",
                     PolynomialDisplay {
                         polynomial: &conclusion.left,
@@ -298,7 +304,8 @@ impl RenderNode for CompletePolynomialProof {
                             char::try_from(v).expect("must be a valid char")
                         ),
                         number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
+                        number_of_smallest_monomials: 5,
+                        exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                     PolynomialDisplay {
                         polynomial: &conclusion.right,
@@ -306,7 +313,8 @@ impl RenderNode for CompletePolynomialProof {
                             char::try_from(v).expect("must be a valid char")
                         ),
                         number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5
+                        number_of_smallest_monomials: 5,
+                        exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                 ));
                 let conclusion_node = document.create_div_unchecked();
@@ -398,19 +406,24 @@ fn render_proof_leaf(
     proof_leaf: ProofLeaf,
 ) -> Node {
     let conclusion = conclusion.reduced();
-    let conclusion_text = document.create_text_node(&format!(
+    let conclusion_text = document
+        .create_element("span")
+        .expect("create span should work");
+    conclusion_text.set_inner_html(&format!(
         "{} ≠ {}",
         PolynomialDisplay {
             polynomial: &conclusion.left,
             variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
             number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 5
+            number_of_smallest_monomials: 5,
+            exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
         PolynomialDisplay {
             polynomial: &conclusion.right,
             variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
             number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 5
+            number_of_smallest_monomials: 5,
+            exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
     ));
     let conclusion_node = document.create_div_unchecked();

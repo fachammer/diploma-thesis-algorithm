@@ -97,6 +97,7 @@ impl Display for Monomial {
         MonomialDisplay {
             monomial: self,
             variable_mapping: &default_variable_display,
+            exponent_display_style: ExponentDisplayStyle::UnicodeSuperscript,
         }
         .fmt(f)
     }
@@ -108,6 +109,7 @@ where
 {
     monomial: &'a Monomial,
     variable_mapping: &'b V,
+    exponent_display_style: ExponentDisplayStyle,
 }
 
 impl<'a, 'b, V> Display for MonomialDisplay<'a, 'b, V>
@@ -125,10 +127,75 @@ where
             .into_iter()
             .map(|variable| match self.monomial.exponent(variable) {
                 1 => (self.variable_mapping)(*variable),
-                exponent => format!("{}^{exponent}", (self.variable_mapping)(*variable)),
+                exponent => format!(
+                    "{}{}",
+                    (self.variable_mapping)(*variable),
+                    SuperscriptDisplay {
+                        number: exponent,
+                        exponent_display_style: self.exponent_display_style
+                    }
+                ),
             })
             .collect();
         write!(f, "{}", strings.join(""))
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ExponentDisplayStyle {
+    Caret,
+    UnicodeSuperscript,
+    SuperscriptTag,
+}
+
+fn format_caret(f: &mut std::fmt::Formatter<'_>, number: u32) -> std::fmt::Result {
+    write!(f, "^{number}")
+}
+
+fn format_unicode_superscript(f: &mut std::fmt::Formatter<'_>, number: u32) -> std::fmt::Result {
+    for character in number.to_string().chars() {
+        write!(
+            f,
+            "{}",
+            to_unicode_superscript(character).expect("all digits have superscrips")
+        )?;
+    }
+    Ok(())
+}
+
+fn to_unicode_superscript(c: char) -> Result<char, String> {
+    let superscript = match c {
+        '0' => '⁰',
+        '1' => '¹',
+        '2' => '²',
+        '3' => '³',
+        '4' => '⁴',
+        '5' => '⁵',
+        '6' => '⁶',
+        '7' => '⁷',
+        '8' => '⁸',
+        '9' => '⁹',
+        _ => return Err(format!("character '{}' not supported", c)),
+    };
+    Ok(superscript)
+}
+
+fn format_superscript_tag(f: &mut std::fmt::Formatter<'_>, number: u32) -> std::fmt::Result {
+    write!(f, "<sup>{number}</sup>")
+}
+
+struct SuperscriptDisplay {
+    number: u32,
+    exponent_display_style: ExponentDisplayStyle,
+}
+
+impl Display for SuperscriptDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.exponent_display_style {
+            ExponentDisplayStyle::Caret => format_caret(f, self.number),
+            ExponentDisplayStyle::UnicodeSuperscript => format_unicode_superscript(f, self.number),
+            ExponentDisplayStyle::SuperscriptTag => format_superscript_tag(f, self.number),
+        }
     }
 }
 
@@ -297,6 +364,7 @@ impl Display for Polynomial {
             variable_mapping: &default_variable_display,
             number_of_largest_monomials: 5,
             number_of_smallest_monomials: 5,
+            exponent_display_style: ExponentDisplayStyle::UnicodeSuperscript,
         }
         .fmt(f)
     }
@@ -311,12 +379,14 @@ where
     pub(crate) variable_mapping: &'b V,
     pub(crate) number_of_largest_monomials: usize,
     pub(crate) number_of_smallest_monomials: usize,
+    pub(crate) exponent_display_style: ExponentDisplayStyle,
 }
 
 impl<'a, 'b, V> Display for PolynomialDisplay<'a, 'b, V>
 where
     V: Fn(u32) -> String,
 {
+    // TODO: refactor this function
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut non_zero: Vec<(&Monomial, &u32)> =
             self.polynomial.non_zero_monomials_amount_iter().collect();
@@ -336,7 +406,8 @@ where
                             "{}",
                             MonomialDisplay {
                                 monomial,
-                                variable_mapping: self.variable_mapping
+                                variable_mapping: self.variable_mapping,
+                                exponent_display_style: self.exponent_display_style,
                             }
                         )
                     } else {
@@ -344,7 +415,8 @@ where
                             "{amount}{}",
                             MonomialDisplay {
                                 monomial,
-                                variable_mapping: self.variable_mapping
+                                variable_mapping: self.variable_mapping,
+                                exponent_display_style: self.exponent_display_style,
                             }
                         )
                     }
@@ -369,7 +441,8 @@ where
                             "{}",
                             MonomialDisplay {
                                 monomial,
-                                variable_mapping: self.variable_mapping
+                                variable_mapping: self.variable_mapping,
+                                exponent_display_style: self.exponent_display_style,
                             }
                         )
                     } else {
@@ -377,7 +450,8 @@ where
                             "{amount}{}",
                             MonomialDisplay {
                                 monomial,
-                                variable_mapping: self.variable_mapping
+                                variable_mapping: self.variable_mapping,
+                                exponent_display_style: self.exponent_display_style,
                             }
                         )
                     }
@@ -405,7 +479,8 @@ where
                             "{}",
                             MonomialDisplay {
                                 monomial,
-                                variable_mapping: self.variable_mapping
+                                variable_mapping: self.variable_mapping,
+                                exponent_display_style: self.exponent_display_style,
                             }
                         )
                     } else {
@@ -413,7 +488,8 @@ where
                             "{amount}{}",
                             MonomialDisplay {
                                 monomial,
-                                variable_mapping: self.variable_mapping
+                                variable_mapping: self.variable_mapping,
+                                exponent_display_style: self.exponent_display_style,
                             }
                         )
                     }
