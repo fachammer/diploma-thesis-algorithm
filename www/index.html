@@ -45,6 +45,11 @@
         margin: 0 auto;
       }
 
+      h1 {
+        font-size: 1.5em;
+        margin-bottom: 15px;
+      }
+
       .input-grid {
         display: grid;
         grid-template-columns: max-content 1fr max-content 1fr;
@@ -61,15 +66,23 @@
         align-self: center;
       }
 
+      .term-input {
+        resize: none;
+        border: 1px solid grey;
+        line-break: anywhere;
+        align-self: center;
+        padding: 5px;
+      }
+
+      .polynomial-view {
+        padding: 5px;
+      }
+
       .term-input[data-valid="false"] {
         border-color: red;
       }
 
-      .term-input {
-        width: 100%;
-        resize: none;
-        border: 1px solid grey;
-        line-break: anywhere;
+      .label {
         align-self: center;
       }
 
@@ -99,7 +112,8 @@
       }
 
       #polynomial-view,
-      #term-view {
+      #term-view,
+      #proof-search-summary-view {
         display: contents;
       }
 
@@ -200,11 +214,15 @@
         </div>
         <div id="polynomial-view">
           <span class="label">as polynomials</span>
-          <span id="left-polynomial"></span>
+          <span id="left-polynomial" class="polynomial-view"></span>
           <span class="disequality-sign">≠</span>
-          <span id="right-polynomial"></span>
-
-          <span>proof</span>
+          <span id="right-polynomial" class="polynomial-view"></span>
+        </div>
+        <div id="proof-search-summary-view">
+          <span>proof search</span>
+          <span id="proof-summary"></span>
+          <span></span>
+          <span></span>
         </div>
       </div>
     </main>
