@@ -56,6 +56,10 @@ impl PolynomialDisequality {
         }
     }
 
+    pub(crate) fn reduced(&self) -> Self {
+        Self::from_polynomials_reduced(self.left.clone(), self.right.clone())
+    }
+
     pub(crate) fn variables(&self) -> impl Iterator<Item = &u32> {
         let unique_variables: HashSet<&u32> = self
             .left

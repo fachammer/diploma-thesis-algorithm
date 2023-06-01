@@ -461,15 +461,15 @@ impl RenderNode for CompletePolynomialProof {
     fn render(&self, document: &Document) -> Node {
         match self {
             CompletePolynomialProof::SuccessorNonZero { conclusion } => {
-                render_proof_leaf(document, conclusion, ProofLeaf::SuccessorNonZero)
+                render_proof_leaf(document, &conclusion.reduced(), ProofLeaf::SuccessorNonZero)
             }
             CompletePolynomialProof::FoundRoot { conclusion } => {
-                render_proof_leaf(document, conclusion, ProofLeaf::FoundRoot)
+                render_proof_leaf(document, &conclusion.reduced(), ProofLeaf::FoundRoot)
             }
             CompletePolynomialProof::NotStrictlyMonomiallyComparable { conclusion } => {
                 render_proof_leaf(
                     document,
-                    conclusion,
+                    &conclusion.reduced(),
                     ProofLeaf::NotStrictlyMonomiallyComparable,
                 )
             }
@@ -479,6 +479,7 @@ impl RenderNode for CompletePolynomialProof {
                 zero_proof,
                 successor_proof,
             } => {
+                let conclusion = conclusion.reduced();
                 let conclusion_text = document.create_text_node(&format!(
                     "{} ≠ {}",
                     PolynomialDisplay {
