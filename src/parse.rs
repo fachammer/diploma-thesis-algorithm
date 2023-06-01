@@ -7,7 +7,7 @@ impl FromStr for Term {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let tokens = tokens(s)?;
-        let term = TermParser::new(tokens).term()?;
+        let term = new_parser(tokens).term()?;
         Ok(term)
     }
 }
@@ -52,16 +52,18 @@ where
     tokens: Peekable<I>,
 }
 
+fn new_parser<J: Iterator<Item = TermToken>>(
+    iter: J,
+) -> TermParser<impl Iterator<Item = TermToken>> {
+    TermParser {
+        tokens: iter.filter(|t| t != &TermToken::Whitespace).peekable(),
+    }
+}
+
 impl<I> TermParser<I>
 where
     I: Iterator<Item = TermToken>,
 {
-    fn new(iter: I) -> Self {
-        Self {
-            tokens: iter.peekable(),
-        }
-    }
-
     pub fn term(&mut self) -> Result<Term, ParseError> {
         let term = self.add()?;
         if self.tokens.next().is_none() {
@@ -153,6 +155,17 @@ mod test {
                 )
                 .into(),
                 Term::S(Term::Zero.into()).into()
+            ))
+        )
+    }
+
+    #[test]
+    fn pares_test_with_whitespace() {
+        assert_eq!(
+            "S0 * x".parse(),
+            Ok(Term::Mul(
+                Term::S(Term::Zero.into()).into(),
+                Term::Variable('x'.into()).into()
             ))
         )
     }
