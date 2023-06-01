@@ -113,7 +113,7 @@
 
       #polynomial-view,
       #term-view,
-      #proof-search-summary-view {
+      #proof-search-status-view {
         display: contents;
       }
 
@@ -123,7 +123,8 @@
       }
 
       #polynomial-view[data-visible="false"],
-      #proof-view[data-visible="false"] {
+      #proof-view[data-visible="false"],
+      #proof-search-status-view[data-visible="false"] {
         visibility: hidden;
       }
 
@@ -218,9 +219,9 @@
           <span class="disequality-sign">≠</span>
           <span id="right-polynomial" class="polynomial-view"></span>
         </div>
-        <div id="proof-search-summary-view">
-          <span>proof search</span>
-          <span id="proof-summary"></span>
+        <div id="proof-search-status-view">
+          <span>proof status</span>
+          <span id="proof-search-status"></span>
           <span></span>
           <span></span>
         </div>

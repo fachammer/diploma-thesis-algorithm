@@ -82,11 +82,17 @@ fn update(worker: Rc<RefCell<Worker>>) {
     let right_term_element = document.input_by_id_unchecked("right-term-input");
     let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
     let proof_view = document.html_element_by_id_unchecked("proof-view");
+    proof_view.set_text_content(None);
     let validation_messages_element = document.html_element_by_id_unchecked("validation-messages");
     let left_term_validation_message_element =
         document.html_element_by_id_unchecked("left-term-validation-message");
     let right_term_validation_message_element =
         document.html_element_by_id_unchecked("right-term-validation-message");
+    let proof_search_status_view =
+        document.html_element_by_id_unchecked("proof-search-status-view");
+    let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
+    proof_search_status.set_text_content(Some("in progress..."));
+
     let left: Result<Term, _> = left_term_element.text_content().unwrap_or_default().parse();
     let right: Result<Term, _> = right_term_element
         .text_content()
@@ -100,6 +106,7 @@ fn update(worker: Rc<RefCell<Worker>>) {
             validation_messages_element.set_attribute_unchecked("data-valid", "true");
             left_term_validation_message_element.set_attribute_unchecked("data-valid", "true");
             right_term_validation_message_element.set_attribute_unchecked("data-valid", "true");
+            proof_search_status_view.set_attribute_unchecked("data-visible", "true");
             polynomial_view.set_attribute_unchecked("data-visible", "true");
             proof_view.set_attribute_unchecked("data-visible", "true");
 
@@ -131,7 +138,6 @@ fn update(worker: Rc<RefCell<Worker>>) {
                 proof_view.set_text_content(None);
                 let proof_result_pointer =
                     event.data().as_f64().expect("data must be a number") as u32;
-
                 let proof_result = unsafe {
                     Box::from_raw(
                         proof_result_pointer
@@ -139,12 +145,16 @@ fn update(worker: Rc<RefCell<Worker>>) {
                     )
                 };
 
+                let proof_search_status =
+                    document.html_element_by_id_unchecked("proof-search-status");
                 match *proof_result {
                     Ok(proof) => {
                         proof_view.append_child_unchecked(&proof.render(&document));
+                        proof_search_status.set_text_content(Some("found a proof"));
                     }
                     Err(proof_attempt) => {
                         proof_view.append_child_unchecked(&proof_attempt.render(&document));
+                        proof_search_status.set_text_content(Some("there is no proof"));
                     }
                 }
                 let end_time = unchecked_now();
@@ -174,6 +184,7 @@ fn update(worker: Rc<RefCell<Worker>>) {
             right_term_validation_message_element
                 .set_attribute_unchecked("data-valid", &right.is_ok().to_string());
             polynomial_view.set_attribute_unchecked("data-visible", "false");
+            proof_search_status_view.set_attribute_unchecked("data-visible", "false");
             proof_view.set_attribute_unchecked("data-visible", "false");
         }
     }
