@@ -191,11 +191,25 @@ fn update(worker: Rc<RefCell<Worker>>) {
                     document.html_element_by_id_unchecked("proof-search-status");
                 match *proof_result {
                     CompletePolynomialProofSearchResult::ProofFound(proof) => {
-                        proof_view.append_child_unchecked(&proof.render(&document));
+                        proof_view.append_child_unchecked(
+                            &ProofView {
+                                proof,
+                                current_depth: 0,
+                                max_depth: 4,
+                            }
+                            .render(&document),
+                        );
                         proof_search_status.set_text_content(Some("found a proof"));
                     }
                     CompletePolynomialProofSearchResult::NoProofFound { attempt, reason } => {
-                        proof_view.append_child_unchecked(&attempt.render(&document));
+                        proof_view.append_child_unchecked(
+                            &ProofView {
+                                proof: attempt,
+                                current_depth: 0,
+                                max_depth: 4,
+                            }
+                            .render(&document),
+                        );
                         let reason_text = match reason {
                             crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable { .. } => "≸",
                             crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => "exists a root",
@@ -328,9 +342,15 @@ impl RenderNode for Polynomial {
     }
 }
 
-impl RenderNode for CompletePolynomialProof {
+struct ProofView {
+    proof: CompletePolynomialProof,
+    current_depth: u32,
+    max_depth: u32,
+}
+
+impl RenderNode for ProofView {
     fn render(self, document: &Document) -> Node {
-        match self {
+        match self.proof {
             CompletePolynomialProof::SuccessorNonZero { conclusion } => {
                 render_proof_leaf(document, &conclusion, ProofLeaf::SuccessorNonZero)
             }
@@ -398,31 +418,79 @@ impl RenderNode for CompletePolynomialProof {
                 proof_node.append_child_unchecked(&internal_proof_node);
 
                 let proof_node_clone = proof_node.clone();
-                let expand_button_callback = Closure::wrap(Box::new(move |_| {
-                    if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
-                        let document = unchecked_document();
-                        let zero_subproof_node = zero_proof.clone().render(&document);
-                        let successor_subproof_node = successor_proof.clone().render(&document);
-                        let subproofs_node = document.create_div_unchecked();
-                        subproofs_node.set_attribute_unchecked("class", "subproofs");
-                        subproofs_node.append_child_unchecked(&zero_subproof_node);
-                        subproofs_node.append_child_unchecked(&successor_subproof_node);
-                        proof_node_clone.append_child_unchecked(&subproofs_node);
-                    }
 
-                    proof_node_clone
-                        .toggle_attribute("data-expanded")
-                        .expect("toggle attribute should work");
-                })
-                    as Box<dyn FnMut(Event)>);
-                internal_proof_node
-                    .add_event_listener_with_callback(
-                        "click",
-                        expand_button_callback.as_ref().unchecked_ref(),
-                    )
-                    .expect("add event listener should work");
-                // TODO: fix this leakage
-                expand_button_callback.forget();
+                if self.current_depth < self.max_depth {
+                    // TODO: remove this repitition to callback
+                    let zero_subproof_node = ProofView {
+                        proof: *zero_proof,
+                        current_depth: self.current_depth + 1,
+                        max_depth: self.max_depth,
+                    }
+                    .render(document);
+                    let successor_subproof_node = ProofView {
+                        proof: *successor_proof,
+                        current_depth: self.current_depth + 1,
+                        max_depth: self.max_depth,
+                    }
+                    .render(document);
+                    let subproofs_node = document.create_div_unchecked();
+                    subproofs_node.set_attribute_unchecked("class", "subproofs");
+                    subproofs_node.append_child_unchecked(&zero_subproof_node);
+                    subproofs_node.append_child_unchecked(&successor_subproof_node);
+                    proof_node.append_child_unchecked(&subproofs_node);
+                    proof_node.set_attribute_unchecked("data-expanded", "");
+
+                    let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                        proof_node_clone
+                            .toggle_attribute("data-expanded")
+                            .expect("toggle attribute should work");
+                    })
+                        as Box<dyn FnMut(Event)>);
+                    internal_proof_node
+                        .add_event_listener_with_callback(
+                            "click",
+                            expand_button_callback.as_ref().unchecked_ref(),
+                        )
+                        .expect("add event listener should work");
+                    // TODO: fix this leakage
+                    expand_button_callback.forget();
+                } else {
+                    let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                        if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
+                            let document = unchecked_document();
+                            let zero_subproof_node = ProofView {
+                                proof: *zero_proof.clone(),
+                                current_depth: 0,
+                                max_depth: 4,
+                            }
+                            .render(&document);
+                            let successor_subproof_node = ProofView {
+                                proof: *successor_proof.clone(),
+                                current_depth: 0,
+                                max_depth: 4,
+                            }
+                            .render(&document);
+                            let subproofs_node = document.create_div_unchecked();
+                            subproofs_node.set_attribute_unchecked("class", "subproofs");
+                            subproofs_node.append_child_unchecked(&zero_subproof_node);
+                            subproofs_node.append_child_unchecked(&successor_subproof_node);
+                            proof_node_clone.append_child_unchecked(&subproofs_node);
+                        }
+
+                        proof_node_clone
+                            .toggle_attribute("data-expanded")
+                            .expect("toggle attribute should work");
+                    })
+                        as Box<dyn FnMut(Event)>);
+                    internal_proof_node
+                        .add_event_listener_with_callback(
+                            "click",
+                            expand_button_callback.as_ref().unchecked_ref(),
+                        )
+                        .expect("add event listener should work");
+                    // TODO: fix this leakage
+                    expand_button_callback.forget();
+                }
 
                 proof_node.into()
             }
