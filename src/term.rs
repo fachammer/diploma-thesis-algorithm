@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +48,19 @@ impl Term {
                 t.substitute(substitution).into(),
                 u.substitute(substitution).into(),
             ),
+        }
+    }
+
+    pub(crate) fn free_varaiables(&self) -> HashSet<u32> {
+        match self {
+            Term::Variable(x) => HashSet::from_iter([*x]),
+            Term::Zero => HashSet::new(),
+            Term::S(t) => t.free_varaiables(),
+            Term::Add(left, right) | Term::Mul(left, right) => {
+                let mut variables = left.free_varaiables();
+                variables.extend(right.free_varaiables());
+                variables
+            }
         }
     }
 }

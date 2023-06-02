@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use web_sys::{
 
 use crate::{
     disequality::{self, PolynomialDisequality},
+    parse::{self, ParseError},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
@@ -83,6 +84,41 @@ pub struct SearchProof {
     pub(crate) disequality: TermDisequality,
 }
 
+enum ValidationResult {
+    Valid { left: Term, right: Term },
+    Invalid { left: bool, right: bool },
+}
+
+fn validate(
+    left: Result<Term, parse::Error>,
+    right: Result<Term, parse::Error>,
+) -> ValidationResult {
+    match (left, right) {
+        (Ok(left), Ok(right)) => {
+            let left_uses_valid_variables =
+                left.free_varaiables().is_subset(&HashSet::from_iter([
+                    'u' as u32, 'v' as u32, 'w' as u32, 'x' as u32, 'y' as u32, 'z' as u32,
+                ]));
+            let right_uses_valid_variables =
+                right.free_varaiables().is_subset(&HashSet::from_iter([
+                    'u' as u32, 'v' as u32, 'w' as u32, 'x' as u32, 'y' as u32, 'z' as u32,
+                ]));
+            if left_uses_valid_variables && right_uses_valid_variables {
+                ValidationResult::Valid { left, right }
+            } else {
+                ValidationResult::Invalid {
+                    left: left_uses_valid_variables,
+                    right: right_uses_valid_variables,
+                }
+            }
+        }
+        (left, right) => ValidationResult::Invalid {
+            left: left.is_ok(),
+            right: right.is_ok(),
+        },
+    }
+}
+
 fn update(worker: Rc<RefCell<Worker>>) {
     let document = unchecked_document();
     let left_term_element = document.input_by_id_unchecked("left-term-input");
@@ -106,8 +142,10 @@ fn update(worker: Rc<RefCell<Worker>>) {
         .unwrap_or_default()
         .parse();
 
-    match (left, right) {
-        (Ok(left), Ok(right)) => {
+    let validation_result = validate(left, right);
+
+    match validation_result {
+        ValidationResult::Valid { left, right } => {
             left_term_element.set_attribute_unchecked("data-valid", "true");
             right_term_element.set_attribute_unchecked("data-valid", "true");
             validation_messages_element.set_attribute_unchecked("data-valid", "true");
@@ -184,19 +222,19 @@ fn update(worker: Rc<RefCell<Worker>>) {
             // TODO: fix this leakage
             worker_callback.forget();
         }
-        (left, right) => {
+        ValidationResult::Invalid { left, right } => {
             validation_messages_element.set_attribute_unchecked("data-valid", "false");
-            left_term_element.set_attribute_unchecked("data-valid", &left.is_ok().to_string());
-            right_term_element.set_attribute_unchecked("data-valid", &right.is_ok().to_string());
+            left_term_element.set_attribute_unchecked("data-valid", &left.to_string());
+            right_term_element.set_attribute_unchecked("data-valid", &right.to_string());
             left_term_validation_message_element
-                .set_attribute_unchecked("data-valid", &left.is_ok().to_string());
+                .set_attribute_unchecked("data-valid", &left.to_string());
             right_term_validation_message_element
-                .set_attribute_unchecked("data-valid", &right.is_ok().to_string());
+                .set_attribute_unchecked("data-valid", &right.to_string());
             polynomial_view.set_attribute_unchecked("data-visible", "false");
             proof_search_status_view.set_attribute_unchecked("data-visible", "false");
             proof_view.set_attribute_unchecked("data-visible", "false");
         }
-    }
+    };
 }
 
 trait NodeUnchecked {

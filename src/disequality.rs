@@ -100,8 +100,8 @@ impl PolynomialDisequality {
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TermDisequality {
-    left: Term,
-    right: Term,
+    pub(crate) left: Term,
+    pub(crate) right: Term,
 }
 
 impl TermDisequality {
@@ -125,6 +125,12 @@ impl TermDisequality {
             left: self.left.substitute(substitution),
             right: self.right.substitute(substitution),
         }
+    }
+
+    pub(crate) fn free_varaiables(&self) -> HashSet<u32> {
+        let mut variables = self.left.free_varaiables();
+        variables.extend(self.right.free_varaiables());
+        variables
     }
 }
 
