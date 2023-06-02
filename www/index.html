@@ -194,8 +194,13 @@
         cursor: pointer;
       }
 
-      .proof[data-inference-type="split"] > .proof-node {
+      .proof[data-inference-type="split"]:not([data-expanded]) > .proof-node {
         background-color: rgb(255, 255, 124);
+      }
+
+      .proof[data-inference-type="split"]:not([data-expanded])
+        > .proof-node:hover {
+        background-color: rgb(193, 193, 78);
       }
 
       .proof[data-inference-type="found-root"] > .proof-node,
