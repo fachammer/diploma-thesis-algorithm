@@ -39,6 +39,12 @@ pub(crate) fn setup() {
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
+    document
+        .query_selector("body")
+        .expect("query selector must succeed")
+        .expect("there must be a body")
+        .set_attribute_unchecked("style", "opacity: 1; margin-top: 0px");
+
     let worker_clone = worker.clone();
     let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
         console::log_1(&"got ready message".into());

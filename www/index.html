@@ -11,14 +11,14 @@
         font-family: "Roboto";
         font-style: normal;
         font-weight: 400;
-        font-display: swap;
-        src: url("fonts/Roboto-Regular.ttf");
+        font-display: optional;
+        src: url("fonts/Roboto-Regular.woff2");
       }
 
       * {
         margin: 0;
         padding: 0;
-        font-family: "Roboto", sans-serif;
+        font-family: "Roboto", Arial, sans-serif;
       }
 
       a {
@@ -41,6 +41,8 @@
 
       body {
         margin: 0 auto;
+        transition: opacity 0.15s, margin-top 0.15s;
+        transition-timing-function: ease-in-out;
       }
 
       #left-term-input,
@@ -217,10 +219,11 @@
     </style>
   </head>
 
-  <body>
+  <body style="opacity: 0; margin-top: 2px">
     <script src="../pkg/thesis_algorithm.js"></script>
     <script>
       async function init() {
+        fetch("worker.js");
         await wasm_bindgen("../pkg/thesis_algorithm_bg.wasm");
 
         wasm_bindgen.main();
@@ -265,9 +268,9 @@
           <!-- TODO: mention notion of strict monomial comparability -->
         </p>
         <p>
-          In the following you can enter two terms with free variables
-          u,v,w,x,y,z and the algorithm is run and either produces a proof in
-          this proof calculus or gives a proof attempt and a reason why this
+          In the following you can enter two terms with free variables u, v, w,
+          x, y, z and the algorithm is run and either produces a proof in this
+          proof calculus or gives a proof attempt and a reason why this
           particular disequality is not provable.
           <!-- TODO: mention associativity and binding of S, +, * -->
           <!-- TODO: mention expandability of proofs -->
@@ -338,13 +341,13 @@
         </div>
         <div id="polynomial-view">
           <span class="label">converted to polynomials</span>
-          <span id="left-polynomial" class="polynomial-view"></span>
+          <span id="left-polynomial" class="polynomial-view">0</span>
           <span class="disequality-sign">≠</span>
-          <span id="right-polynomial" class="polynomial-view"></span>
+          <span id="right-polynomial" class="polynomial-view">0</span>
         </div>
         <div id="proof-search-status-view">
           <span>proof status</span>
-          <span id="proof-search-status"></span>
+          <span id="proof-search-status">in progress...</span>
           <span></span>
           <span></span>
         </div>
