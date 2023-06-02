@@ -239,11 +239,11 @@
   </head>
 
   <body style="opacity: 0; margin-top: 2px">
-    <script src="../pkg/thesis_algorithm.js"></script>
+    <script src="pkg/thesis_algorithm.js"></script>
     <script>
       async function init() {
         fetch("worker.js");
-        await wasm_bindgen("../pkg/thesis_algorithm_bg.wasm");
+        await wasm_bindgen("pkg/thesis_algorithm_bg.wasm");
 
         wasm_bindgen.main();
       }
