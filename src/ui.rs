@@ -13,6 +13,7 @@ use crate::{
     disequality::{self, PolynomialDisequality},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
+    proof_search::CompletePolynomialProofSearchResult,
     term,
 };
 
@@ -145,22 +146,24 @@ fn update(worker: Rc<RefCell<Worker>>) {
                 let proof_result_pointer =
                     event.data().as_f64().expect("data must be a number") as u32;
                 let proof_result = unsafe {
-                    Box::from_raw(
-                        proof_result_pointer
-                            as *mut Result<CompletePolynomialProof, CompletePolynomialProof>,
-                    )
+                    Box::from_raw(proof_result_pointer as *mut CompletePolynomialProofSearchResult)
                 };
 
                 let proof_search_status =
                     document.html_element_by_id_unchecked("proof-search-status");
                 match *proof_result {
-                    Ok(proof) => {
+                    CompletePolynomialProofSearchResult::ProofFound(proof) => {
                         proof_view.append_child_unchecked(&proof.render(&document));
                         proof_search_status.set_text_content(Some("found a proof"));
                     }
-                    Err(proof_attempt) => {
-                        proof_view.append_child_unchecked(&proof_attempt.render(&document));
-                        proof_search_status.set_text_content(Some("there is no proof"));
+                    CompletePolynomialProofSearchResult::NoProofFound { attempt, reason } => {
+                        proof_view.append_child_unchecked(&attempt.render(&document));
+                        let reason_text = match reason {
+                            crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable { .. } => "≸",
+                            crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => "exists a root",
+                        };
+                        proof_search_status
+                            .set_text_content(Some(&format!("there is no proof: {reason_text}")));
                     }
                 }
                 let end_time = unchecked_now();

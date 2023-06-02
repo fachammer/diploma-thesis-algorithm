@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::term::Term;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub(crate) struct Substitution(HashMap<u32, Term>);
+pub struct Substitution(HashMap<u32, Term>);
 
 impl Substitution {
     pub(crate) fn new() -> Self {
@@ -12,6 +12,16 @@ impl Substitution {
 
     pub(crate) fn get(&self, variable: &u32) -> Option<&Term> {
         self.0.get(variable)
+    }
+
+    pub fn compose(mut self, other: Self) -> Self {
+        for (v, t) in other.0.iter() {
+            self.0
+                .entry(*v)
+                .and_modify(|term| *term = term.substitute(&other))
+                .or_insert_with(|| t.clone());
+        }
+        self
     }
 }
 

@@ -4,6 +4,7 @@ use crate::{
     multiset::hash_map::MultisetHashMap,
     polynomial::{Monomial, Polynomial},
     proof::CompletePolynomialProof,
+    substitution::Substitution,
     term::Term,
 };
 
@@ -15,27 +16,75 @@ use crate::{
 };
 
 pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
-    search_proof(disequality).is_ok()
+    matches!(
+        search_proof(disequality),
+        ProofSearchResult::ProofFound { .. }
+    )
 }
 
-pub fn search_proof(disequality: &TermDisequality) -> Result<Proof, ProofAttempt> {
+#[derive(Clone)]
+pub enum NoProofFoundReason {
+    NotStrictlyMonomiallyComparable { substitution: Substitution },
+    ExistsRoot { substitution: Substitution },
+}
+
+impl NoProofFoundReason {
+    fn with_updated_substitution<F: FnOnce(Substitution) -> Substitution>(self, f: F) -> Self {
+        match self {
+            NoProofFoundReason::NotStrictlyMonomiallyComparable { substitution: s } => {
+                NoProofFoundReason::NotStrictlyMonomiallyComparable { substitution: f(s) }
+            }
+            NoProofFoundReason::ExistsRoot { substitution: s } => {
+                Self::ExistsRoot { substitution: f(s) }
+            }
+        }
+    }
+}
+
+pub enum ProofSearchResult {
+    ProofFound(Proof),
+    NoProofFound {
+        attempt: ProofAttempt,
+        reason: NoProofFoundReason,
+    },
+}
+
+pub fn search_proof(disequality: &TermDisequality) -> ProofSearchResult {
     let polynomial_disequality = PolynomialDisequality::from(disequality.clone());
 
     let proof_attempt = search_proof_as_polynomials(polynomial_disequality);
-    let skeleton = Skeleton::try_from(proof_attempt)?;
-    Ok(Proof {
-        conclusion: disequality.clone(),
-        skeleton,
-    })
+    match Skeleton::try_from(proof_attempt) {
+        Ok(skeleton) => ProofSearchResult::ProofFound(Proof {
+            conclusion: disequality.clone(),
+            skeleton,
+        }),
+        Err((attempt, reason)) => ProofSearchResult::NoProofFound { attempt, reason },
+    }
 }
 
-pub fn search_complete_proof(
-    disequality: &TermDisequality,
-) -> Result<CompletePolynomialProof, CompletePolynomialProof> {
-    let proof = search_proof(disequality).map_err(|attempt| {
-        CompletePolynomialProof::from((attempt, PolynomialDisequality::from(disequality.clone())))
-    })?;
-    Ok(CompletePolynomialProof::from(proof))
+pub enum CompletePolynomialProofSearchResult {
+    ProofFound(CompletePolynomialProof),
+    NoProofFound {
+        attempt: CompletePolynomialProof,
+        reason: NoProofFoundReason,
+    },
+}
+
+pub fn search_complete_proof(disequality: &TermDisequality) -> CompletePolynomialProofSearchResult {
+    match search_proof(disequality) {
+        ProofSearchResult::ProofFound(proof) => {
+            CompletePolynomialProofSearchResult::ProofFound(CompletePolynomialProof::from(proof))
+        }
+        ProofSearchResult::NoProofFound { attempt, reason } => {
+            CompletePolynomialProofSearchResult::NoProofFound {
+                attempt: CompletePolynomialProof::from((
+                    attempt,
+                    PolynomialDisequality::from(disequality.clone()),
+                )),
+                reason,
+            }
+        }
+    }
 }
 
 struct ProofHole<'a> {
@@ -245,11 +294,23 @@ impl TryFrom<ProofInProgress> for ProofAttempt {
 }
 
 impl TryFrom<ProofAttempt> for Skeleton {
-    type Error = ProofAttempt;
+    type Error = (ProofAttempt, NoProofFoundReason);
 
     fn try_from(value: ProofAttempt) -> Result<Self, Self::Error> {
         match value {
-            ProofAttempt::NotStrictlyMonomiallyComparable | ProofAttempt::FoundRoot => Err(value),
+            ProofAttempt::NotStrictlyMonomiallyComparable => Err((
+                value,
+                NoProofFoundReason::NotStrictlyMonomiallyComparable {
+                    substitution: Substitution::new(),
+                },
+            )),
+            ProofAttempt::FoundRoot => Err((
+                value,
+                NoProofFoundReason::ExistsRoot {
+                    // TODO: replace this with all zero roots
+                    substitution: Substitution::new(),
+                },
+            )),
             ProofAttempt::SuccessorNonZero => Ok(Skeleton::SuccessorNonZero),
             ProofAttempt::Split {
                 variable,
@@ -264,21 +325,52 @@ impl TryFrom<ProofAttempt> for Skeleton {
                     zero_skeleton: zero_skeleton.into(),
                     successor_skeleton: successor_skeleton.into(),
                 }),
-                (Ok(zero_skeleton), Err(successor_attempt)) => Err(ProofAttempt::Split {
-                    variable,
-                    zero_proof: Box::new(ProofAttempt::from(zero_skeleton)),
-                    successor_proof: Box::new(successor_attempt),
-                }),
-                (Err(zero_attempt), Ok(successor_skeleton)) => Err(ProofAttempt::Split {
-                    variable,
-                    zero_proof: Box::new(zero_attempt),
-                    successor_proof: Box::new(ProofAttempt::from(successor_skeleton)),
-                }),
-                (Err(zero_attempt), Err(sucessor_attempt)) => Err(ProofAttempt::Split {
-                    variable,
-                    zero_proof: Box::new(zero_attempt),
-                    successor_proof: Box::new(sucessor_attempt),
-                }),
+                (Ok(zero_skeleton), Err((successor_attempt, reason))) => Err((
+                    ProofAttempt::Split {
+                        variable,
+                        zero_proof: Box::new(ProofAttempt::from(zero_skeleton)),
+                        successor_proof: Box::new(successor_attempt),
+                    },
+                    reason.with_updated_substitution(|s| {
+                        s.compose(Substitution::from_iter([(
+                            variable,
+                            Term::S(Box::new(Term::Variable(variable))),
+                        )]))
+                    }),
+                )),
+                (Err((zero_attempt, reason)), Ok(successor_skeleton)) => Err((
+                    ProofAttempt::Split {
+                        variable,
+                        zero_proof: Box::new(zero_attempt),
+                        successor_proof: Box::new(ProofAttempt::from(successor_skeleton)),
+                    },
+                    reason.with_updated_substitution(|s| {
+                        s.compose(Substitution::from_iter([(variable, Term::Zero)]))
+                    }),
+                )),
+                (Err((zero_attempt, zero_reason)), Err((sucessor_attempt, successor_reason))) => {
+                    Err((
+                        ProofAttempt::Split {
+                            variable,
+                            zero_proof: Box::new(zero_attempt),
+                            successor_proof: Box::new(sucessor_attempt),
+                        },
+                        match (zero_reason, successor_reason) {
+                            (
+                                NoProofFoundReason::NotStrictlyMonomiallyComparable { .. },
+                                successor_reason @ NoProofFoundReason::ExistsRoot { .. },
+                            ) => successor_reason.with_updated_substitution(|s| {
+                                s.compose(Substitution::from_iter([(
+                                    variable,
+                                    Term::S(Box::new(Term::Variable(variable))),
+                                )]))
+                            }),
+                            (zero_reason, _) => zero_reason.with_updated_substitution(|s| {
+                                s.compose(Substitution::from_iter([(variable, Term::Zero)]))
+                            }),
+                        },
+                    ))
+                }
             },
         }
     }
@@ -461,7 +553,7 @@ mod test {
 
         #[test]
         fn proof_search_is_correct(left in term(5, 10000), right in term(5, 10000)) {
-            if let Ok(proof) = search_proof(&TermDisequality::from_terms(
+            if let ProofSearchResult::ProofFound(proof) = search_proof(&TermDisequality::from_terms(
                 left, right
             )) {
                 assert!(proof.check())
