@@ -101,7 +101,7 @@
       }
 
       button:hover {
-        background-color: grey;
+        background-color: rgb(200, 200, 200);
         cursor: pointer;
       }
 
@@ -134,7 +134,7 @@
       }
 
       .term-input[data-valid="false"] {
-        border-color: red;
+        border-color: rgb(255, 84, 84);
       }
 
       .label {
@@ -161,7 +161,7 @@
       .validation-message[data-valid="false"] {
         visibility: visible;
         display: block;
-        color: red;
+        color: rgb(255, 84, 84);
         font-size: 0.8em;
         align-self: center;
       }
@@ -190,8 +190,22 @@
       }
 
       .proof[data-inference-type="split"] > .proof-node:hover {
-        background-color: grey;
+        background-color: rgb(200, 200, 200);
         cursor: pointer;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node {
+        background-color: rgb(255, 255, 124);
+      }
+
+      .proof[data-inference-type="found-root"] > .proof-node,
+      .proof[data-inference-type="not-strictly-monomially-comparable"]
+        > .proof-node {
+        background-color: rgb(255, 163, 163);
+      }
+
+      .proof[data-inference-type="successor-non-zero"] > .proof-node {
+        background-color: rgb(161, 255, 161);
       }
 
       .proof:not([data-expanded]) > .subproofs {
@@ -294,9 +308,7 @@
           <button onclick="enterTerms('SS0*x', 'S(SS0*y)')">
             enter SS0*x ≠ S(SS0*y)
           </button>
-          <button onclick="enterTerms('SS0*x', 'SSSx')">
-            enter SS0*x ≠ SSSx
-          </button>
+          <button onclick="enterTerms('x', 'SSS0')">enter x ≠ SSS0</button>
           <button onclick="enterTerms('x*y*z+SS0*x', 'S(SS0*y)')">
             enter x*y*z+SS0*x ≠ S(SS0*y)
           </button>
