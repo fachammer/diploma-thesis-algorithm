@@ -11,7 +11,7 @@ use web_sys::{
 
 use crate::{
     disequality::{self, PolynomialDisequality},
-    parse::{self, ParseError},
+    parse::{self},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
