@@ -126,12 +126,6 @@ impl TermDisequality {
             right: self.right.substitute(substitution),
         }
     }
-
-    pub(crate) fn free_varaiables(&self) -> HashSet<u32> {
-        let mut variables = self.left.free_varaiables();
-        variables.extend(self.right.free_varaiables());
-        variables
-    }
 }
 
 impl From<PolynomialDisequality> for TermDisequality {
