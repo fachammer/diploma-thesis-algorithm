@@ -126,7 +126,7 @@ impl<'a> Iterator for ProofSearchIterator<'a> {
             ProofStepResult::NotStrictlyMonomiallyComparable => {
                 *hole = ProofInProgress::NotStrictlyMonomiallyComparable
             }
-            ProofStepResult::FoundRoot => *hole = ProofInProgress::FoundRoot,
+            ProofStepResult::AllZeroIsRoot => *hole = ProofInProgress::FoundRoot,
             ProofStepResult::SuccessorNonZero => *hole = ProofInProgress::SuccessorNonZero,
             ProofStepResult::Split {
                 variable,
@@ -153,7 +153,7 @@ impl<'a> Iterator for ProofSearchIterator<'a> {
 
 enum ProofStepResult {
     NotStrictlyMonomiallyComparable,
-    FoundRoot,
+    AllZeroIsRoot,
     SuccessorNonZero,
     Split {
         variable: u32,
@@ -168,7 +168,7 @@ fn search_proof_step(
 ) -> ProofStepResult {
     let disequality = disequality.reduce();
     if disequality.has_zero_root() {
-        ProofStepResult::FoundRoot
+        ProofStepResult::AllZeroIsRoot
     } else if disequality.is_in_successor_non_zero_form() {
         ProofStepResult::SuccessorNonZero
     } else if !disequality.is_strictly_monomially_comparable() {

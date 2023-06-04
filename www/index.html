@@ -22,8 +22,8 @@
       }
 
       a {
-        text-decoration: underline;
         color: #2077c2;
+        text-decoration: none;
       }
 
       a:hover {
@@ -85,7 +85,7 @@
 
       #example-buttons {
         display: flex;
-        gap: 10px;
+        gap: 20px;
         align-items: stretch;
         flex-flow: row wrap;
       }
@@ -105,12 +105,13 @@
         color: #2077c2;
         border: none;
         background-color: white;
-        text-decoration: underline;
+        text-decoration: none;
         font-size: 1em;
       }
 
       button:hover {
         cursor: pointer;
+        text-decoration: underline;
       }
 
       .input-grid {
@@ -192,31 +193,53 @@
       .proof {
         display: grid;
         grid-template-rows: max-content auto;
-        row-gap: 10px;
       }
 
       .proof[data-inference-type="split"] > .proof-node:hover {
-        background-color: rgb(200, 200, 200);
         cursor: pointer;
       }
 
-      .proof[data-inference-type="split"]:not([data-expanded]) > .proof-node {
-        background-color: rgb(255, 255, 124);
+      /* .proof[data-inference-type="split"] > .proof-node:hover > .conclusion {
+        text-decoration: underline;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node > .conclusion {
+        color: #2077c2;
+      } */
+
+      .proof[data-inference-type="split"] > .proof-node > .subproofs-toggle {
+        color: #2077c2;
+      }
+
+      .proof[data-inference-type="split"]
+        > .proof-node:hover
+        > .subproofs-toggle {
+        text-decoration: underline;
+      }
+
+      .proof[data-inference-type="split"][data-expanded]
+        > .proof-node
+        > .subproofs-toggle::before {
+        content: "collapse subproofs";
       }
 
       .proof[data-inference-type="split"]:not([data-expanded])
-        > .proof-node:hover {
-        background-color: rgb(193, 193, 78);
+        > .proof-node
+        > .subproofs-toggle::before {
+        content: "show subproofs";
       }
 
-      .proof[data-inference-type="found-root"] > .proof-node,
+      .proof[data-inference-type="found-root"] > .proof-node > .inference,
       .proof[data-inference-type="not-strictly-monomially-comparable"]
-        > .proof-node {
-        background-color: rgb(255, 163, 163);
+        > .proof-node
+        > .inference {
+        color: rgb(233, 0, 0);
       }
 
-      .proof[data-inference-type="successor-non-zero"] > .proof-node {
-        background-color: rgb(161, 255, 161);
+      .proof[data-inference-type="successor-non-zero"]
+        > .proof-node
+        > .inference {
+        color: rgb(0, 164, 0);
       }
 
       .proof:not([data-expanded]) > .subproofs {
@@ -224,19 +247,46 @@
       }
 
       .conclusion,
-      .inference {
+      .inference,
+      .subproofs-toggle {
         text-align: center;
       }
 
+      .conclusion {
+        display: flex;
+        justify-content: center;
+        align-items: baseline;
+        border-bottom: 1px solid black;
+      }
+
       .proof-node {
-        border: 1px solid black;
-        padding: 5px;
+        padding: 5px 15px;
         align-self: stretch;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node {
+        display: grid;
+        grid-template-areas: "conclusion inference" "subproofs-toggle inference";
+        column-gap: 10px;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node > .conclusion {
+        grid-area: conclusion;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node > .inference {
+        grid-area: inference;
+        grid-row: span 2;
+        align-self: center;
+        justify-self: start;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node > .subproofs-toggle {
+        grid-area: subproofs-toggle;
       }
 
       .subproofs {
         display: grid;
-        overflow: auto;
         grid-template-columns: max-content max-content;
         column-gap: 10px;
         width: max-content;
@@ -289,20 +339,19 @@
         </script>
         <div id="example-buttons">
           <button onclick="enterTerms('x*x', 'Sx')">
-            <div>enter x<sup>2</sup> ≠ x + 1</div>
+            <div>x<sup>2</sup> ≠ x + 1</div>
           </button>
           <button onclick="enterTerms('SS0*x', 'S(SS0*y)')">
-            <div>enter 2x ≠ 2y + 1</div>
+            <div>2x ≠ 2y + 1</div>
           </button>
           <button onclick="enterTerms('x', 'SSS0')">
-            <div>enter x ≠ 3</div>
+            <div>x ≠ 3</div>
           </button>
           <button onclick="enterTerms('x*y*z+SS0*x', 'S(SS0*y)')">
-            <div>enter xyz + 2x ≠ 2y + 1</div>
+            <div>xyz + 2x ≠ 2y + 1</div>
           </button>
           <button onclick="enterTerms('u*u*v*v*w*w*x*x*y*y*z*z', 'SS0')">
             <div>
-              enter
               u<sup>2</sup>v<sup>2</sup>w<sup>2</sup>x<sup>2</sup>y<sup>2</sup>z<sup
                 >2</sup
               >

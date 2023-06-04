@@ -395,8 +395,12 @@ impl RenderNode for ProofView {
                         exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                 ));
+                let phantom_height = document.create_element_unchecked("span");
+                phantom_height.set_attribute_unchecked("class", "phantom-height");
+                phantom_height.set_inner_html("M<sup>M</sup>");
                 let conclusion_node = document.create_div_unchecked();
                 conclusion_node.append_child_unchecked(&conclusion_text);
+                conclusion_node.append_child_unchecked(&phantom_height);
                 conclusion_node.set_attribute_unchecked("class", "conclusion");
 
                 let inference_text = document.create_text_node(&format!(
@@ -407,10 +411,14 @@ impl RenderNode for ProofView {
                 inference_node.set_attribute_unchecked("class", "inference");
                 inference_node.append_child_unchecked(&inference_text);
 
+                let subproofs_toggle = document.create_div_unchecked();
+                subproofs_toggle.set_attribute_unchecked("class", "subproofs-toggle");
+
                 let internal_proof_node = document.create_div_unchecked();
                 internal_proof_node.set_attribute_unchecked("class", "proof-node");
                 internal_proof_node.append_child_unchecked(&conclusion_node);
                 internal_proof_node.append_child_unchecked(&inference_node);
+                internal_proof_node.append_child_unchecked(&subproofs_toggle);
 
                 let proof_node = document.create_div_unchecked();
                 proof_node.set_attribute_unchecked("class", "proof");
@@ -517,10 +525,10 @@ impl ProofLeaf {
 impl Display for ProofLeaf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProofLeaf::SuccessorNonZero => write!(f, "A1"),
-            ProofLeaf::FoundRoot => write!(f, "found root"),
+            ProofLeaf::SuccessorNonZero => write!(f, "✓"),
+            ProofLeaf::FoundRoot => write!(f, "✘"),
             ProofLeaf::NotStrictlyMonomiallyComparable => {
-                write!(f, "≸")
+                write!(f, "✘")
             }
         }
     }
@@ -552,9 +560,13 @@ fn render_proof_leaf(
             exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
     ));
+    let phantom_height = document.create_element_unchecked("span");
+    phantom_height.set_attribute_unchecked("class", "phantom-height");
+    phantom_height.set_inner_html("M<sup>M</sup>");
     let conclusion_node = document.create_div_unchecked();
     conclusion_node.set_attribute_unchecked("class", "conclusion");
     conclusion_node.append_child_unchecked(&conclusion_text);
+    conclusion_node.append_child_unchecked(&phantom_height);
 
     let inference_text = document.create_text_node(&proof_leaf.to_string());
     let inference_node = document.create_div_unchecked();
