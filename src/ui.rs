@@ -125,7 +125,6 @@ fn update(worker: Rc<RefCell<Worker>>) {
     let right_term_element = document.input_by_id_unchecked("right-term-input");
     let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
     let proof_view = document.html_element_by_id_unchecked("proof-view");
-    proof_view.set_text_content(None);
     let validation_messages_element = document.html_element_by_id_unchecked("validation-messages");
     let left_term_validation_message_element =
         document.html_element_by_id_unchecked("left-term-validation-message");
@@ -133,8 +132,30 @@ fn update(worker: Rc<RefCell<Worker>>) {
         document.html_element_by_id_unchecked("right-term-validation-message");
     let proof_search_status_view =
         document.html_element_by_id_unchecked("proof-search-status-view");
-    let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
-    proof_search_status.set_text_content(Some("in progress..."));
+    let proof_search_status =
+        unchecked_document().html_element_by_id_unchecked("proof-search-status");
+    proof_search_status.set_attribute_unchecked("data-proof-search-status", "in-progress");
+    let set_proof_search_status_callback = Closure::wrap(Box::new(|| {
+        let document = unchecked_document();
+        let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
+        let proof_view = document.html_element_by_id_unchecked("proof-view");
+        if proof_search_status
+            .get_attribute("data-proof-search-status")
+            .unwrap_or(String::default())
+            == "in-progress"
+        {
+            proof_view.set_text_content(None);
+            proof_search_status.set_text_content(Some("in progress..."));
+        }
+    }) as Box<dyn FnMut()>);
+    window()
+        .expect("window must exist")
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            set_proof_search_status_callback.as_ref().unchecked_ref(),
+            70,
+        )
+        .expect("set timeout should work");
+    set_proof_search_status_callback.forget();
 
     let left: Result<Term, _> = left_term_element.text_content().unwrap_or_default().parse();
     let right: Result<Term, _> = right_term_element
@@ -199,7 +220,9 @@ fn update(worker: Rc<RefCell<Worker>>) {
                             }
                             .render(&document),
                         );
-                        proof_search_status.set_text_content(Some("found a proof"));
+                        proof_search_status
+                            .set_attribute_unchecked("data-proof-search-status", "found-proof");
+                        proof_search_status.set_text_content(Some("found proof"));
                     }
                     CompletePolynomialProofSearchResult::NoProofFound { attempt, reason } => {
                         proof_view.append_child_unchecked(
@@ -210,12 +233,15 @@ fn update(worker: Rc<RefCell<Worker>>) {
                             }
                             .render(&document),
                         );
-                        let reason_text = match reason {
-                            crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable { .. } => "≸",
-                            crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => "exists a root",
+                        let (reason_attribute_value, reason_text) = match reason {
+                            crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable { .. } => ("not-strictly-monomially-comparable", "no proof found: is not smc"),
+                            crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => ("found-root", "no proof found: found root"),
                         };
-                        proof_search_status
-                            .set_text_content(Some(&format!("there is no proof: {reason_text}")));
+                        proof_search_status.set_attribute_unchecked(
+                            "data-proof-search-status",
+                            reason_attribute_value,
+                        );
+                        proof_search_status.set_text_content(Some(reason_text));
                     }
                 }
                 let end_time = unchecked_now();
@@ -466,13 +492,13 @@ impl RenderNode for ProofView {
                             let zero_subproof_node = ProofView {
                                 proof: *zero_proof.clone(),
                                 current_depth: 0,
-                                max_depth: 4,
+                                max_depth: 0,
                             }
                             .render(&document);
                             let successor_subproof_node = ProofView {
                                 proof: *successor_proof.clone(),
                                 current_depth: 0,
-                                max_depth: 4,
+                                max_depth: 0,
                             }
                             .render(&document);
                             let subproofs_node = document.create_div_unchecked();

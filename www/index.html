@@ -195,26 +195,15 @@
         grid-template-rows: max-content auto;
       }
 
-      .proof[data-inference-type="split"] > .proof-node:hover {
-        cursor: pointer;
-      }
-
-      /* .proof[data-inference-type="split"] > .proof-node:hover > .conclusion {
-        text-decoration: underline;
-      }
-
-      .proof[data-inference-type="split"] > .proof-node > .conclusion {
-        color: #2077c2;
-      } */
-
       .proof[data-inference-type="split"] > .proof-node > .subproofs-toggle {
         color: #2077c2;
       }
 
       .proof[data-inference-type="split"]
-        > .proof-node:hover
-        > .subproofs-toggle {
+        > .proof-node
+        > .subproofs-toggle:hover {
         text-decoration: underline;
+        cursor: pointer;
       }
 
       .proof[data-inference-type="split"][data-expanded]
@@ -260,8 +249,7 @@
       }
 
       .proof-node {
-        padding: 5px;
-        /* margin: 5px; */
+        margin: 5px;
         align-self: stretch;
       }
 
@@ -401,15 +389,17 @@
             >converted to polynomials
             <span class="phantom-height">M<sup>M</sup></span></span
           >
-          <span id="left-polynomial" class="polynomial-view">0</span>
+          <span id="left-polynomial" class="polynomial-view"
+            >x<sup>2</sup></span
+          >
           <span class="disequality-sign">≠</span>
-          <span id="right-polynomial" class="polynomial-view">0</span>
+          <span id="right-polynomial" class="polynomial-view">x + 1</span>
         </div>
         <div id="proof-search-status-view">
           <span class="label"
             >proof status <span class="phantom-height">≸</span></span
           >
-          <span id="proof-search-status">in progress...</span>
+          <span id="proof-search-status"></span>
           <span></span>
           <span></span>
         </div>
