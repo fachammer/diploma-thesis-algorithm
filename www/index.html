@@ -22,7 +22,7 @@
       }
 
       a {
-        text-decoration: none;
+        text-decoration: underline;
         color: #2077c2;
       }
 
@@ -85,23 +85,33 @@
 
       #example-buttons {
         display: flex;
-        gap: 5px;
+        gap: 10px;
+        align-items: stretch;
         flex-flow: row wrap;
       }
 
       #example-buttons > button {
-        flex: 1 2 1;
+        display: flex;
+        grid-template-rows: auto;
+        grid-template-columns: auto;
+        align-self: stretch;
+      }
+
+      #example-buttons > button > div {
+        align-self: flex-end;
       }
 
       button {
+        color: #2077c2;
+        border: none;
         background-color: white;
-        border: 1px solid black;
-        padding: 5px;
+        text-decoration: underline;
+        /* border: 1px solid black; */
         font-size: 1em;
       }
 
       button:hover {
-        background-color: rgb(200, 200, 200);
+        /* background-color: rgb(200, 200, 200); */
         cursor: pointer;
       }
 
@@ -117,19 +127,16 @@
       #right-term-input,
       #left-polynomial,
       #right-polynomial,
-      .disequality-sign {
-        align-self: center;
+      .disequality-sign,
+      #proof-search-status {
+        align-self: baseline;
       }
 
       .term-input {
         resize: none;
         border: 1px solid grey;
         line-break: anywhere;
-        align-self: center;
-        padding: 5px;
-      }
-
-      .polynomial-view {
+        align-self: baseline;
         padding: 5px;
       }
 
@@ -138,7 +145,8 @@
       }
 
       .label {
-        align-self: center;
+        align-self: flex-start;
+        display: flex;
       }
 
       #left-polynomial,
@@ -225,6 +233,7 @@
       .proof-node {
         border: 1px solid black;
         padding: 5px;
+        align-self: stretch;
       }
 
       .subproofs {
@@ -234,6 +243,11 @@
         column-gap: 10px;
         width: max-content;
         margin: 0 auto;
+      }
+
+      .phantom-height {
+        visibility: hidden;
+        width: 1px;
       }
     </style>
   </head>
@@ -256,44 +270,12 @@
       </h1>
       <article id="introduction">
         <p>
-          We work in a language with zero (0), successor (S), addition (+) and
-          multiplication (*). Now consider the weak theory of arithmetic
-          consisting of the axioms
-        </p>
-        <ul id="axioms">
-          <li>∀x x + 0 = x</li>
-          <li>∀x∀y x + Sy = S(x + y)</li>
-          <li>∀x x * 0 = 0</li>
-          <li>∀x∀y x * Sy = x*y + x</li>
-          <li>∀x∀y∀z x + (y + z) = (x + y) + z</li>
-          <li>∀x∀y x + y = y + x</li>
-          <li>∀x∀y∀z x * (y * z) = (x * y) * z</li>
-          <li>∀x∀y x * y = y * x</li>
-          <li>∀x∀y∀z x * (y + z) = x * y + x * z</li>
-          <li>∀x S(x) ≠ 0</li>
-          <li>∀x (x = 0 ∨ ∃y x = Sy)</li>
-        </ul>
-        <p>
-          Diophantine satisfiablity is decidable for this theory as proved in my
+          This website implements an algorithm for finding a proof of a
+          disequality between arithemtical terms in a certain proof calculus
+          related to a weak theory of arithmetic. For more details check my
           <a href="diploma-thesis.pdf">diploma thesis</a>.
-          <!-- TODO: explain Diophantine satisfiability -->
-          <!-- TODO: explain/mention connection between Diophantine satisfiability and decidability of disequalities -->
-          To show this, an intermediate proof calculus with the following rules
-          is introduced
         </p>
-        <p>
-          <!-- TODO: add inference rules -->
-          <!-- TODO: mention theory allows working with polynomials -->
-          <!-- TODO: mention notion of strict monomial comparability -->
-        </p>
-        <p>
-          In the following you can enter two terms with free variables u, v, w,
-          x, y, z and the algorithm is run and either produces a proof in this
-          proof calculus or gives a proof attempt and a reason why this
-          particular disequality is not provable.
-          <!-- TODO: mention associativity and binding of S, +, * -->
-          <!-- TODO: mention expandability of proofs -->
-        </p>
+        <p></p>
       </article>
 
       <div id="example-inputs">
@@ -309,21 +291,25 @@
         </script>
         <div id="example-buttons">
           <button onclick="enterTerms('x*x', 'Sx')">
-            enter x<sup>2</sup> ≠ x + 1
+            <div>enter x<sup>2</sup> ≠ x + 1</div>
           </button>
           <button onclick="enterTerms('SS0*x', 'S(SS0*y)')">
-            enter 2x ≠ 2y + 1
+            <div>enter 2x ≠ 2y + 1</div>
           </button>
-          <button onclick="enterTerms('x', 'SSS0')">enter x ≠ 3</button>
+          <button onclick="enterTerms('x', 'SSS0')">
+            <div>enter x ≠ 3</div>
+          </button>
           <button onclick="enterTerms('x*y*z+SS0*x', 'S(SS0*y)')">
-            enter xyz + 2x ≠ 2y + 1
+            <div>enter xyz + 2x ≠ 2y + 1</div>
           </button>
           <button onclick="enterTerms('u*u*v*v*w*w*x*x*y*y*z*z', 'SS0')">
-            enter
-            u<sup>2</sup>v<sup>2</sup>w<sup>2</sup>x<sup>2</sup>y<sup>2</sup>z<sup
-              >2</sup
-            >
-            ≠ 2
+            <div>
+              enter
+              u<sup>2</sup>v<sup>2</sup>w<sup>2</sup>x<sup>2</sup>y<sup>2</sup>z<sup
+                >2</sup
+              >
+              ≠ 2
+            </div>
           </button>
         </div>
       </div>
@@ -337,7 +323,7 @@
             class="term-input"
             type="text"
           >
-            0
+            x*x
           </div>
 
           <span class="disequality-sign">≠</span>
@@ -348,7 +334,7 @@
             class="term-input"
             type="text"
           >
-            0
+            Sx
           </div>
           <div id="validation-messages">
             <span>&nbsp;</span>
@@ -362,13 +348,18 @@
           </div>
         </div>
         <div id="polynomial-view">
-          <span class="label">converted to polynomials</span>
+          <span class="label"
+            >converted to polynomials
+            <span class="phantom-height">M<sup>M</sup></span></span
+          >
           <span id="left-polynomial" class="polynomial-view">0</span>
           <span class="disequality-sign">≠</span>
           <span id="right-polynomial" class="polynomial-view">0</span>
         </div>
         <div id="proof-search-status-view">
-          <span>proof status</span>
+          <span class="label"
+            >proof status <span class="phantom-height">≸</span></span
+          >
           <span id="proof-search-status">in progress...</span>
           <span></span>
           <span></span>
