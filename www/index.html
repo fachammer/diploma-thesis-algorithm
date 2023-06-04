@@ -274,7 +274,7 @@
           <li>∀x (x = 0 ∨ ∃y x = Sy)</li>
         </ul>
         <p>
-          Diophantine satisfiablity is decidable for this theory as shown in my
+          Diophantine satisfiablity is decidable for this theory as proved in my
           <a href="diploma-thesis.pdf">diploma thesis</a>.
           <!-- TODO: explain Diophantine satisfiability -->
           <!-- TODO: explain/mention connection between Diophantine satisfiability and decidability of disequalities -->
@@ -308,16 +308,22 @@
           }
         </script>
         <div id="example-buttons">
-          <button onclick="enterTerms('x*x', 'Sx')">enter x*x ≠ Sx</button>
-          <button onclick="enterTerms('SS0*x', 'S(SS0*y)')">
-            enter SS0*x ≠ S(SS0*y)
+          <button onclick="enterTerms('x*x', 'Sx')">
+            enter x<sup>2</sup> ≠ x + 1
           </button>
-          <button onclick="enterTerms('x', 'SSS0')">enter x ≠ SSS0</button>
+          <button onclick="enterTerms('SS0*x', 'S(SS0*y)')">
+            enter 2x ≠ 2y + 1
+          </button>
+          <button onclick="enterTerms('x', 'SSS0')">enter x ≠ 3</button>
           <button onclick="enterTerms('x*y*z+SS0*x', 'S(SS0*y)')">
-            enter x*y*z+SS0*x ≠ S(SS0*y)
+            enter xyz + 2x ≠ 2y + 1
           </button>
           <button onclick="enterTerms('u*u*v*v*w*w*x*x*y*y*z*z', 'SS0')">
-            enter u*u*v*v*w*w*x*x*y*y*z*z ≠ SS0
+            enter
+            u<sup>2</sup>v<sup>2</sup>w<sup>2</sup>x<sup>2</sup>y<sup>2</sup>z<sup
+              >2</sup
+            >
+            ≠ 2
           </button>
         </div>
       </div>
