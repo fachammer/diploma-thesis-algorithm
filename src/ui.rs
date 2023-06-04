@@ -120,6 +120,7 @@ fn validate(
 }
 
 fn update(worker: Rc<RefCell<Worker>>) {
+    let window = window().expect("window must exist");
     let document = unchecked_document();
     let left_term_element = document.input_by_id_unchecked("left-term-input");
     let right_term_element = document.input_by_id_unchecked("right-term-input");
@@ -148,13 +149,19 @@ fn update(worker: Rc<RefCell<Worker>>) {
             proof_search_status.set_text_content(Some("in progress..."));
         }
     }) as Box<dyn FnMut()>);
-    window()
-        .expect("window must exist")
+    if let Some(Ok(timeout_id)) = proof_search_status
+        .get_attribute("data-timeout-id")
+        .map(|s| s.parse::<i32>())
+    {
+        window.clear_timeout_with_handle(timeout_id);
+    }
+    let timeout_id = window
         .set_timeout_with_callback_and_timeout_and_arguments_0(
             set_proof_search_status_callback.as_ref().unchecked_ref(),
-            70,
+            50,
         )
         .expect("set timeout should work");
+    proof_search_status.set_attribute_unchecked("data-timeout-id", &timeout_id.to_string());
     set_proof_search_status_callback.forget();
 
     let left: Result<Term, _> = left_term_element.text_content().unwrap_or_default().parse();
@@ -246,14 +253,6 @@ fn update(worker: Rc<RefCell<Worker>>) {
                 }
                 let end_time = unchecked_now();
                 console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
-                let window_width = window()
-                    .expect("window must exist")
-                    .inner_width()
-                    .expect("inner width must exist");
-                let window_width = window_width.unchecked_into_f64();
-                let proof_view_scroll_width: f64 = proof_view.scroll_width().into();
-                proof_view
-                    .scroll_to_with_x_and_y((proof_view_scroll_width - window_width) / 2.0, 0.0);
             }) as Box<dyn FnMut(_)>);
             worker
                 .borrow()
@@ -408,7 +407,7 @@ impl RenderNode for ProofView {
                             char::try_from(v).expect("must be a valid char")
                         ),
                         number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5,
+                        number_of_smallest_monomials: 2,
                         exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                     PolynomialDisplay {
@@ -417,7 +416,7 @@ impl RenderNode for ProofView {
                             char::try_from(v).expect("must be a valid char")
                         ),
                         number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 5,
+                        number_of_smallest_monomials: 2,
                         exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                 ));
@@ -572,14 +571,14 @@ fn render_proof_leaf(
             polynomial: &conclusion.left,
             variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
             number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 5,
+            number_of_smallest_monomials: 2,
             exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
         PolynomialDisplay {
             polynomial: &conclusion.right,
             variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
             number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 5,
+            number_of_smallest_monomials: 2,
             exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
     ));
