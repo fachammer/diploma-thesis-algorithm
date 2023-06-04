@@ -395,12 +395,9 @@ impl RenderNode for ProofView {
                         exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                 ));
-                let phantom_height = document.create_element_unchecked("span");
-                phantom_height.set_attribute_unchecked("class", "phantom-height");
-                phantom_height.set_inner_html("M<sup>M</sup>");
                 let conclusion_node = document.create_div_unchecked();
                 conclusion_node.append_child_unchecked(&conclusion_text);
-                conclusion_node.append_child_unchecked(&phantom_height);
+                conclusion_node.append_child_unchecked(&create_phantom_height(document));
                 conclusion_node.set_attribute_unchecked("class", "conclusion");
 
                 let inference_text = document.create_text_node(&format!(
@@ -454,7 +451,7 @@ impl RenderNode for ProofView {
                             .expect("toggle attribute should work");
                     })
                         as Box<dyn FnMut(Event)>);
-                    internal_proof_node
+                    subproofs_toggle
                         .add_event_listener_with_callback(
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
@@ -490,7 +487,7 @@ impl RenderNode for ProofView {
                             .expect("toggle attribute should work");
                     })
                         as Box<dyn FnMut(Event)>);
-                    internal_proof_node
+                    subproofs_toggle
                         .add_event_listener_with_callback(
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
@@ -560,28 +557,39 @@ fn render_proof_leaf(
             exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
     ));
-    let phantom_height = document.create_element_unchecked("span");
-    phantom_height.set_attribute_unchecked("class", "phantom-height");
-    phantom_height.set_inner_html("M<sup>M</sup>");
+
     let conclusion_node = document.create_div_unchecked();
     conclusion_node.set_attribute_unchecked("class", "conclusion");
     conclusion_node.append_child_unchecked(&conclusion_text);
-    conclusion_node.append_child_unchecked(&phantom_height);
+    conclusion_node.append_child_unchecked(&create_phantom_height(document));
 
     let inference_text = document.create_text_node(&proof_leaf.to_string());
     let inference_node = document.create_div_unchecked();
     inference_node.set_attribute_unchecked("class", "inference");
     inference_node.append_child_unchecked(&inference_text);
 
+    let subproofs_toggle = document.create_div_unchecked();
+    subproofs_toggle.set_attribute_unchecked("class", "subproofs-toggle");
+    subproofs_toggle.append_child_unchecked(&create_phantom_height(document));
+
     let internal_proof_node = document.create_div_unchecked();
     internal_proof_node.set_attribute_unchecked("class", "proof-node");
     internal_proof_node.append_child_unchecked(&conclusion_node);
     internal_proof_node.append_child_unchecked(&inference_node);
+    internal_proof_node.append_child_unchecked(&subproofs_toggle);
 
     let proof_node = document.create_div_unchecked();
     proof_node.set_attribute_unchecked("class", "proof");
     proof_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
+    proof_node.set_attribute_unchecked("data-expanded", "");
     proof_node.append_child_unchecked(&internal_proof_node);
 
     proof_node.into()
+}
+
+fn create_phantom_height(document: &Document) -> Element {
+    let phantom_height = document.create_element_unchecked("span");
+    phantom_height.set_attribute_unchecked("class", "phantom-height");
+    phantom_height.set_inner_html("M<sup>M</sup>");
+    phantom_height
 }

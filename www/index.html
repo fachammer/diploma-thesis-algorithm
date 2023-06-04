@@ -220,7 +220,7 @@
       .proof[data-inference-type="split"][data-expanded]
         > .proof-node
         > .subproofs-toggle::before {
-        content: "collapse subproofs";
+        content: "hide subproofs";
       }
 
       .proof[data-inference-type="split"]:not([data-expanded])
@@ -260,28 +260,30 @@
       }
 
       .proof-node {
-        padding: 5px 15px;
+        padding: 5px;
+        /* margin: 5px; */
         align-self: stretch;
       }
 
-      .proof[data-inference-type="split"] > .proof-node {
+      .proof > .proof-node {
         display: grid;
+        grid-template-columns: auto max-content;
         grid-template-areas: "conclusion inference" "subproofs-toggle inference";
-        column-gap: 10px;
+        column-gap: 5px;
       }
 
-      .proof[data-inference-type="split"] > .proof-node > .conclusion {
+      .proof > .proof-node > .conclusion {
         grid-area: conclusion;
       }
 
-      .proof[data-inference-type="split"] > .proof-node > .inference {
+      .proof > .proof-node > .inference {
         grid-area: inference;
         grid-row: span 2;
         align-self: center;
-        justify-self: start;
+        justify-self: stretch;
       }
 
-      .proof[data-inference-type="split"] > .proof-node > .subproofs-toggle {
+      .proof > .proof-node > .subproofs-toggle {
         grid-area: subproofs-toggle;
       }
 
