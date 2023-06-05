@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet, fmt::Display, rc::Rc};
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
@@ -57,20 +57,16 @@ enum ValidationResult {
     Invalid { left: bool, right: bool },
 }
 
+const VALID_VARIABLES: [char; 6] = ['u', 'v', 'w', 'x', 'y', 'z'];
 fn validate(
     left: Result<Term, parse::Error>,
     right: Result<Term, parse::Error>,
 ) -> ValidationResult {
     match (left, right) {
         (Ok(left), Ok(right)) => {
-            let left_uses_valid_variables =
-                left.free_varaiables().is_subset(&HashSet::from_iter([
-                    'u' as u32, 'v' as u32, 'w' as u32, 'x' as u32, 'y' as u32, 'z' as u32,
-                ]));
-            let right_uses_valid_variables =
-                right.free_varaiables().is_subset(&HashSet::from_iter([
-                    'u' as u32, 'v' as u32, 'w' as u32, 'x' as u32, 'y' as u32, 'z' as u32,
-                ]));
+            let valid_variables = VALID_VARIABLES.iter().map(|x| *x as u32).collect();
+            let left_uses_valid_variables = left.free_varaiables().is_subset(&valid_variables);
+            let right_uses_valid_variables = right.free_varaiables().is_subset(&valid_variables);
             if left_uses_valid_variables && right_uses_valid_variables {
                 ValidationResult::Valid { left, right }
             } else {
