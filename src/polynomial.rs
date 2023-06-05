@@ -143,13 +143,8 @@ where
 
 #[derive(Clone, Copy)]
 pub(crate) enum ExponentDisplayStyle {
-    Caret,
     UnicodeSuperscript,
     SuperscriptTag,
-}
-
-fn format_caret(f: &mut std::fmt::Formatter<'_>, number: u32) -> std::fmt::Result {
-    write!(f, "^{number}")
 }
 
 fn format_unicode_superscript(f: &mut std::fmt::Formatter<'_>, number: u32) -> std::fmt::Result {
@@ -192,7 +187,6 @@ struct SuperscriptDisplay {
 impl Display for SuperscriptDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.exponent_display_style {
-            ExponentDisplayStyle::Caret => format_caret(f, self.number),
             ExponentDisplayStyle::UnicodeSuperscript => format_unicode_superscript(f, self.number),
             ExponentDisplayStyle::SuperscriptTag => format_superscript_tag(f, self.number),
         }

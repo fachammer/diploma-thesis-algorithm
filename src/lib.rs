@@ -5,6 +5,7 @@ mod proof;
 pub mod proof_search;
 mod substitution;
 mod term;
+mod web_unchecked;
 
 use std::{cell::RefCell, rc::Rc};
 

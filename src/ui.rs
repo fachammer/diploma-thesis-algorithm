@@ -4,10 +4,7 @@ use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::{memory, prelude::*};
-use web_sys::{
-    console, window, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent,
-    MessageEvent, Node, Window, Worker,
-};
+use web_sys::{console, window, Document, Element, Event, InputEvent, MessageEvent, Node, Worker};
 
 use crate::{
     disequality::{self, PolynomialDisequality},
@@ -16,18 +13,16 @@ use crate::{
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
     term,
+    web_unchecked::{
+        document_unchecked, unchecked_now, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
+    },
 };
-
-fn unchecked_document() -> Document {
-    let window = web_sys::window().expect("window must exist");
-    window.document_unchecked()
-}
 
 pub(crate) fn setup() {
     let worker = Rc::new(RefCell::new(
         Worker::new("./worker.js").expect("worker must exist"),
     ));
-    let document = unchecked_document();
+    let document = document_unchecked();
 
     console::log_1(&"hello".into());
 
@@ -63,14 +58,6 @@ pub(crate) fn setup() {
         .post_message(&memory())
         .expect("post message memory should work");
     worker_callback.forget();
-}
-
-fn unchecked_now() -> f64 {
-    window()
-        .expect("there should be a window")
-        .performance()
-        .expect("there shold be performance")
-        .now()
 }
 
 fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
@@ -121,7 +108,7 @@ fn validate(
 
 fn update(worker: Rc<RefCell<Worker>>) {
     let window = window().expect("window must exist");
-    let document = unchecked_document();
+    let document = document_unchecked();
     let left_term_element = document.input_by_id_unchecked("left-term-input");
     let right_term_element = document.input_by_id_unchecked("right-term-input");
     let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
@@ -134,10 +121,10 @@ fn update(worker: Rc<RefCell<Worker>>) {
     let proof_search_status_view =
         document.html_element_by_id_unchecked("proof-search-status-view");
     let proof_search_status =
-        unchecked_document().html_element_by_id_unchecked("proof-search-status");
+        document_unchecked().html_element_by_id_unchecked("proof-search-status");
     proof_search_status.set_attribute_unchecked("data-proof-search-status", "in-progress");
     let set_proof_search_status_callback = Closure::wrap(Box::new(|| {
-        let document = unchecked_document();
+        let document = document_unchecked();
         let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
         let proof_view = document.html_element_by_id_unchecked("proof-view");
         if proof_search_status
@@ -204,7 +191,7 @@ fn update(worker: Rc<RefCell<Worker>>) {
                 .expect("post message should work");
 
             let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
-                let document = unchecked_document();
+                let document = document_unchecked();
                 let start_time = unchecked_now();
 
                 let proof_view = document.html_element_by_id_unchecked("proof-view");
@@ -274,72 +261,6 @@ fn update(worker: Rc<RefCell<Worker>>) {
             proof_view.set_attribute_unchecked("data-visible", "false");
         }
     };
-}
-
-trait NodeUnchecked {
-    fn append_child_unchecked(&self, child: &Node) -> Node;
-}
-
-impl NodeUnchecked for Node {
-    fn append_child_unchecked(&self, child: &Node) -> Node {
-        self.append_child(child).expect("append child must work")
-    }
-}
-
-trait ElementUnchecked {
-    fn set_attribute_unchecked(&self, name: &str, value: &str);
-}
-
-impl ElementUnchecked for Element {
-    fn set_attribute_unchecked(&self, name: &str, value: &str) {
-        self.set_attribute(name, value)
-            .expect("set attribute must succeed");
-    }
-}
-
-trait DocumentUnchecked {
-    fn create_element_unchecked(&self, element: &str) -> Element;
-
-    fn html_element_by_id_unchecked(&self, id: &str) -> HtmlElement;
-
-    fn input_by_id_unchecked(&self, id: &str) -> HtmlInputElement {
-        self.html_element_by_id_unchecked(id).unchecked_into()
-    }
-
-    fn create_div_unchecked(&self) -> HtmlElement {
-        self.create_element_unchecked("div").unchecked_into()
-    }
-}
-
-impl DocumentUnchecked for Document {
-    fn create_element_unchecked(&self, element: &str) -> Element {
-        self.create_element(element)
-            .expect("create element must work")
-    }
-
-    fn html_element_by_id_unchecked(&self, id: &str) -> HtmlElement {
-        self.get_element_by_id(id)
-            .unwrap_or_else(|| {
-                panic!(
-                    "{}",
-                    format_args!("element with id '{id}' must exist")
-                        .as_str()
-                        .unwrap()
-                        .to_string()
-                )
-            })
-            .unchecked_into()
-    }
-}
-
-trait WindowUnchecked {
-    fn document_unchecked(&self) -> Document;
-}
-
-impl WindowUnchecked for Window {
-    fn document_unchecked(&self) -> Document {
-        self.document().expect("document must exist")
-    }
 }
 
 trait RenderNode {
@@ -487,7 +408,7 @@ impl RenderNode for ProofView {
                 } else {
                     let expand_button_callback = Closure::wrap(Box::new(move |_| {
                         if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
-                            let document = unchecked_document();
+                            let document = document_unchecked();
                             let zero_subproof_node = ProofView {
                                 proof: *zero_proof.clone(),
                                 current_depth: 0,

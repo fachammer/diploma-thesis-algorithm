@@ -2,8 +2,6 @@ use self::vec::MultisetVec;
 
 pub(crate) type Multiset<T> = MultisetVec<T>;
 
-// TODO: add trait for multiset, and get rid of allowing dead code
-
 mod vec {
     use std::hash::Hash;
 
