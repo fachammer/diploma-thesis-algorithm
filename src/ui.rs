@@ -8,7 +8,6 @@ use web_sys::{console, window, Document, Element, Event, InputEvent, MessageEven
 
 use crate::{
     disequality::{self, PolynomialDisequality},
-    parse,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
@@ -21,9 +20,6 @@ use crate::{
 
 pub(crate) fn setup() {
     let document = document_unchecked();
-
-    console::log_1(&"hello".into());
-
     let worker = setup_worker(update);
 
     let left_input = document.input_by_id_unchecked("left-term-input");
@@ -53,32 +49,40 @@ pub struct SearchProof {
 }
 
 enum ValidationResult {
-    Valid { left: Term, right: Term },
-    Invalid { left: bool, right: bool },
+    Valid {
+        left_term: Term,
+        right_term: Term,
+    },
+    Invalid {
+        left_is_valid: bool,
+        right_is_valid: bool,
+    },
 }
 
 const VALID_VARIABLES: [char; 6] = ['u', 'v', 'w', 'x', 'y', 'z'];
-fn validate(
-    left: Result<Term, parse::Error>,
-    right: Result<Term, parse::Error>,
-) -> ValidationResult {
-    match (left, right) {
-        (Ok(left), Ok(right)) => {
+fn validate(left_term_text: &str, right_term_text: &str) -> ValidationResult {
+    let left_term: Result<Term, _> = left_term_text.parse();
+    let right_term: Result<Term, _> = right_term_text.parse();
+    match (left_term, right_term) {
+        (Ok(left_term), Ok(right_term)) => {
             let valid_variables = VALID_VARIABLES.iter().map(|x| *x as u32).collect();
-            let left_uses_valid_variables = left.free_varaiables().is_subset(&valid_variables);
-            let right_uses_valid_variables = right.free_varaiables().is_subset(&valid_variables);
-            if left_uses_valid_variables && right_uses_valid_variables {
-                ValidationResult::Valid { left, right }
+            let left_is_valid = left_term.free_varaiables().is_subset(&valid_variables);
+            let right_is_valid = right_term.free_varaiables().is_subset(&valid_variables);
+            if left_is_valid && right_is_valid {
+                ValidationResult::Valid {
+                    left_term,
+                    right_term,
+                }
             } else {
                 ValidationResult::Invalid {
-                    left: left_uses_valid_variables,
-                    right: right_uses_valid_variables,
+                    left_is_valid,
+                    right_is_valid,
                 }
             }
         }
         (left, right) => ValidationResult::Invalid {
-            left: left.is_ok(),
-            right: right.is_ok(),
+            left_is_valid: left.is_ok(),
+            right_is_valid: right.is_ok(),
         },
     }
 }
@@ -128,16 +132,15 @@ fn update(worker: Rc<RefCell<Worker>>) {
     proof_search_status.set_attribute_unchecked("data-timeout-id", &timeout_id.to_string());
     set_proof_search_status_callback.forget();
 
-    let left: Result<Term, _> = left_term_element.text_content().unwrap_or_default().parse();
-    let right: Result<Term, _> = right_term_element
-        .text_content()
-        .unwrap_or_default()
-        .parse();
-
-    let validation_result = validate(left, right);
+    let left_text_content = &left_term_element.text_content().unwrap_or_default();
+    let right_text_content = &right_term_element.text_content().unwrap_or_default();
+    let validation_result = validate(left_text_content, right_text_content);
 
     match validation_result {
-        ValidationResult::Valid { left, right } => {
+        ValidationResult::Valid {
+            left_term: left,
+            right_term: right,
+        } => {
             left_term_element.set_attribute_unchecked("data-valid", "true");
             right_term_element.set_attribute_unchecked("data-valid", "true");
             validation_messages_element.set_attribute_unchecked("data-valid", "true");
@@ -225,7 +228,10 @@ fn update(worker: Rc<RefCell<Worker>>) {
             // TODO: fix this leakage
             worker_callback.forget();
         }
-        ValidationResult::Invalid { left, right } => {
+        ValidationResult::Invalid {
+            left_is_valid: left,
+            right_is_valid: right,
+        } => {
             validation_messages_element.set_attribute_unchecked("data-valid", "false");
             left_term_element.set_attribute_unchecked("data-valid", &left.to_string());
             right_term_element.set_attribute_unchecked("data-valid", &right.to_string());
