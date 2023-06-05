@@ -287,10 +287,20 @@
         visibility: hidden;
         width: 1px;
       }
+
+      body {
+        opacity: 0;
+        margin-top: 2px;
+      }
+
+      body[data-webassembly-ready] {
+        opacity: 1;
+        margin-top: 0px;
+      }
     </style>
   </head>
 
-  <body style="opacity: 0; margin-top: 2px">
+  <body>
     <script src="pkg/thesis_algorithm.js"></script>
     <script>
       async function init() {

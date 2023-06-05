@@ -38,7 +38,7 @@ pub(crate) fn setup() {
 
     document
         .body_unchecked()
-        .set_attribute_unchecked("style", "opacity: 1; margin-top: 0px");
+        .set_attribute_unchecked("data-webassembly-ready", "");
 }
 
 fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
