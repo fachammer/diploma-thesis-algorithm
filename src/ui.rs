@@ -37,9 +37,7 @@ pub(crate) fn setup() {
     right_input_on_change.forget();
 
     document
-        .query_selector("body")
-        .expect("query selector must succeed")
-        .expect("there must be a body")
+        .body_unchecked()
         .set_attribute_unchecked("style", "opacity: 1; margin-top: 0px");
 }
 

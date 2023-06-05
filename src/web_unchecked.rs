@@ -34,6 +34,8 @@ pub(crate) trait DocumentUnchecked {
     fn create_div_unchecked(&self) -> HtmlElement {
         self.create_element_unchecked("div").unchecked_into()
     }
+
+    fn body_unchecked(&self) -> HtmlElement;
 }
 
 impl DocumentUnchecked for Document {
@@ -53,6 +55,13 @@ impl DocumentUnchecked for Document {
                         .to_string()
                 )
             })
+            .unchecked_into()
+    }
+
+    fn body_unchecked(&self) -> HtmlElement {
+        self.query_selector("body")
+            .expect("query selector must succeed")
+            .expect("there must be a body")
             .unchecked_into()
     }
 }
