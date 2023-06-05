@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
-    Node, Worker,
+    Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent, Node, Worker,
 };
 
 use crate::{
@@ -16,8 +15,7 @@ use crate::{
     proof_search::CompletePolynomialProofSearchResult,
     term,
     web_unchecked::{
-        document_unchecked, unchecked_now, window_unchecked, DocumentUnchecked, ElementUnchecked,
-        NodeUnchecked,
+        document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
     },
     worker::setup_worker,
 };

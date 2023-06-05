@@ -68,13 +68,6 @@ impl WindowUnchecked for Window {
     }
 }
 
-pub(crate) fn unchecked_now() -> f64 {
-    window_unchecked()
-        .performance()
-        .expect("there shold be performance")
-        .now()
-}
-
 pub(crate) fn document_unchecked() -> Document {
     let window = web_sys::window().expect("window must exist");
     window.document_unchecked()
