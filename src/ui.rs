@@ -4,7 +4,10 @@ use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, Document, Element, Event, InputEvent, MessageEvent, Node, Worker};
+use web_sys::{
+    console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
+    Node, Worker,
+};
 
 use crate::{
     disequality::{self, PolynomialDisequality},
@@ -88,138 +91,253 @@ fn validate(left_term_text: &str, right_term_text: &str) -> ValidationResult {
     }
 }
 
-fn update(worker: Rc<RefCell<Worker>>) {
-    let document = document_unchecked();
-    let left_term_element = document.input_by_id_unchecked("left-term-input");
-    let right_term_element = document.input_by_id_unchecked("right-term-input");
-    let polynomial_view = document.html_element_by_id_unchecked("polynomial-view");
-    let proof_view = document.html_element_by_id_unchecked("proof-view");
-    let validation_messages_element = document.html_element_by_id_unchecked("validation-messages");
-    let left_term_validation_message_element =
-        document.html_element_by_id_unchecked("left-term-validation-message");
-    let right_term_validation_message_element =
-        document.html_element_by_id_unchecked("right-term-validation-message");
-    let proof_search_status_view =
-        document.html_element_by_id_unchecked("proof-search-status-view");
-    let proof_search_status =
-        document_unchecked().html_element_by_id_unchecked("proof-search-status");
-
-    let left_text_content = &left_term_element.text_content().unwrap_or_default();
-    let right_text_content = &right_term_element.text_content().unwrap_or_default();
-    let validation_result = validate(left_text_content, right_text_content);
-
-    match validation_result {
-        ValidationResult::Valid {
-            left_term: left,
-            right_term: right,
-        } => {
-            left_term_element.set_attribute_unchecked("data-valid", "true");
-            right_term_element.set_attribute_unchecked("data-valid", "true");
-            validation_messages_element.set_attribute_unchecked("data-valid", "true");
-            left_term_validation_message_element.set_attribute_unchecked("data-valid", "true");
-            right_term_validation_message_element.set_attribute_unchecked("data-valid", "true");
-            proof_search_status_view.set_attribute_unchecked("data-visible", "true");
-            polynomial_view.set_attribute_unchecked("data-visible", "true");
-            proof_view.set_attribute_unchecked("data-visible", "true");
-
-            let left_polynomial_view = document.html_element_by_id_unchecked("left-polynomial");
-            left_polynomial_view.set_text_content(None);
-            let left_polynomial = Polynomial::from(left.clone());
-            left_polynomial_view.append_child_unchecked(&left_polynomial.render(&document));
-
-            let right_polynomial_view = document.html_element_by_id_unchecked("right-polynomial");
-            right_polynomial_view.set_text_content(None);
-            let right_polynomial = Polynomial::from(right.clone());
-            right_polynomial_view.append_child_unchecked(&right_polynomial.render(&document));
-
-            let disequality = TermDisequality::from_terms(left, right);
-
-            worker
-                .borrow()
-                .post_message(
-                    &serde_wasm_bindgen::to_value(&SearchProof { disequality })
-                        .expect("to value should work"),
-                )
-                .expect("post message should work");
-            setup_proof_search_status_update_debounce(proof_search_status);
-
-            let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
-                let document = document_unchecked();
-                let start_time = unchecked_now();
-
-                let proof_view = document.html_element_by_id_unchecked("proof-view");
-                proof_view.set_text_content(None);
-                let proof_result_pointer =
-                    event.data().as_f64().expect("data must be a number") as u32;
-                let proof_result = unsafe {
-                    Box::from_raw(proof_result_pointer as *mut CompletePolynomialProofSearchResult)
-                };
-
-                let proof_search_status =
-                    document.html_element_by_id_unchecked("proof-search-status");
-                match *proof_result {
-                    CompletePolynomialProofSearchResult::ProofFound(proof) => {
-                        proof_view.append_child_unchecked(
-                            &ProofView {
-                                proof,
-                                current_depth: 0,
-                                max_depth: 4,
-                            }
-                            .render(&document),
-                        );
-                        proof_search_status
-                            .set_attribute_unchecked("data-proof-search-status", "found-proof");
-                        proof_search_status.set_text_content(Some("found proof"));
-                    }
-                    CompletePolynomialProofSearchResult::NoProofFound { attempt, reason } => {
-                        proof_view.append_child_unchecked(
-                            &ProofView {
-                                proof: attempt,
-                                current_depth: 0,
-                                max_depth: 4,
-                            }
-                            .render(&document),
-                        );
-                        let (reason_attribute_value, reason_text) = match reason {
-                            crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable { .. } => ("not-strictly-monomially-comparable", "no proof found: is not smc"),
-                            crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => ("found-root", "no proof found: found root"),
-                        };
-                        proof_search_status.set_attribute_unchecked(
-                            "data-proof-search-status",
-                            reason_attribute_value,
-                        );
-                        proof_search_status.set_text_content(Some(reason_text));
-                    }
-                }
-                let end_time = unchecked_now();
-                console::log_1(&format!("elapsed time: {} ms", end_time - start_time).into());
-            }) as Box<dyn FnMut(_)>);
-            worker
-                .borrow()
-                .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
-
-            // TODO: fix this leakage
-            worker_callback.forget();
-        }
-        ValidationResult::Invalid {
-            left_is_valid: left,
-            right_is_valid: right,
-        } => {
-            validation_messages_element.set_attribute_unchecked("data-valid", "false");
-            left_term_element.set_attribute_unchecked("data-valid", &left.to_string());
-            right_term_element.set_attribute_unchecked("data-valid", &right.to_string());
-            left_term_validation_message_element
-                .set_attribute_unchecked("data-valid", &left.to_string());
-            right_term_validation_message_element
-                .set_attribute_unchecked("data-valid", &right.to_string());
-            polynomial_view.set_attribute_unchecked("data-visible", "false");
-            proof_search_status_view.set_attribute_unchecked("data-visible", "false");
-            proof_view.set_attribute_unchecked("data-visible", "false");
-        }
-    };
+struct TermView {
+    left_term: HtmlInputElement,
+    right_term: HtmlInputElement,
 }
 
-fn setup_proof_search_status_update_debounce(proof_search_status: web_sys::HtmlElement) {
+struct PolynomialView {
+    root: HtmlElement,
+    left: HtmlElement,
+    right: HtmlElement,
+}
+
+struct ProofSearchStatusView {
+    status_text: HtmlElement,
+}
+
+struct ProofView {
+    root: HtmlElement,
+}
+
+struct ValidationMessagesView {
+    root: HtmlElement,
+    left_term: HtmlElement,
+    right_term: HtmlElement,
+}
+
+struct UIElements {
+    term_view: TermView,
+    polynomial_view: PolynomialView,
+    proof_search_status_view: ProofSearchStatusView,
+    proof_view: ProofView,
+    validation_messages: ValidationMessagesView,
+}
+
+impl UIElements {
+    fn get_in(document: &Document) -> Self {
+        Self {
+            term_view: {
+                TermView {
+                    left_term: document.input_by_id_unchecked("left-term-input"),
+                    right_term: document.input_by_id_unchecked("right-term-input"),
+                }
+            },
+            polynomial_view: PolynomialView {
+                root: document.html_element_by_id_unchecked("polynomial-view"),
+                left: document.html_element_by_id_unchecked("left-polynomial"),
+                right: document.html_element_by_id_unchecked("right-polynomial"),
+            },
+            proof_search_status_view: ProofSearchStatusView {
+                status_text: document.html_element_by_id_unchecked("proof-search-status"),
+            },
+            proof_view: ProofView {
+                root: document.html_element_by_id_unchecked("proof-view"),
+            },
+            validation_messages: ValidationMessagesView {
+                root: document.html_element_by_id_unchecked("validation-messages"),
+                left_term: document.html_element_by_id_unchecked("left-term-validation-message"),
+                right_term: document.html_element_by_id_unchecked("right-term-validation-message"),
+            },
+        }
+    }
+
+    fn left_term_text(&self) -> String {
+        self.term_view.left_term.text_content().unwrap_or_default()
+    }
+
+    fn right_term_text(&self) -> String {
+        self.term_view.right_term.text_content().unwrap_or_default()
+    }
+
+    fn validate(&self) -> ValidationResult {
+        validate(&self.left_term_text(), &self.right_term_text())
+    }
+
+    fn set_valid(&self) {
+        self.term_view
+            .left_term
+            .set_attribute_unchecked("data-valid", "true");
+        self.term_view
+            .right_term
+            .set_attribute_unchecked("data-valid", "true");
+        self.validation_messages
+            .root
+            .set_attribute_unchecked("data-valid", "true");
+        self.validation_messages
+            .left_term
+            .set_attribute_unchecked("data-valid", "true");
+        self.validation_messages
+            .right_term
+            .set_attribute_unchecked("data-valid", "true");
+        self.proof_search_status_view
+            .status_text
+            .set_attribute_unchecked("data-visible", "true");
+        self.polynomial_view
+            .root
+            .set_attribute_unchecked("data-visible", "true");
+        self.proof_view
+            .root
+            .set_attribute_unchecked("data-visible", "true");
+    }
+
+    fn set_invalid(&self, left_is_valid: bool, right_is_valid: bool) {
+        self.validation_messages
+            .root
+            .set_attribute_unchecked("data-valid", "false");
+        self.term_view
+            .left_term
+            .set_attribute_unchecked("data-valid", &left_is_valid.to_string());
+        self.term_view
+            .right_term
+            .set_attribute_unchecked("data-valid", &right_is_valid.to_string());
+        self.validation_messages
+            .left_term
+            .set_attribute_unchecked("data-valid", &left_is_valid.to_string());
+        self.validation_messages
+            .right_term
+            .set_attribute_unchecked("data-valid", &right_is_valid.to_string());
+        self.polynomial_view
+            .root
+            .set_attribute_unchecked("data-visible", "false");
+        self.proof_search_status_view
+            .status_text
+            .set_attribute_unchecked("data-visible", "false");
+        self.proof_view
+            .root
+            .set_attribute_unchecked("data-visible", "false");
+    }
+
+    fn update_proof_view(
+        &self,
+        document: &Document,
+        proof_result: CompletePolynomialProofSearchResult,
+    ) {
+        let proof_view = &self.proof_view.root;
+        proof_view.set_text_content(None);
+        let proof_search_status = &self.proof_search_status_view.status_text;
+        match proof_result {
+            CompletePolynomialProofSearchResult::ProofFound(proof) => {
+                proof_view.append_child_unchecked(
+                    &ProofDisplay {
+                        proof,
+                        current_depth: 0,
+                        max_depth: 4,
+                    }
+                    .render(document),
+                );
+                proof_search_status
+                    .set_attribute_unchecked("data-proof-search-status", "found-proof");
+                proof_search_status.set_text_content(Some("found proof"));
+            }
+            CompletePolynomialProofSearchResult::NoProofFound { attempt, reason } => {
+                proof_view.append_child_unchecked(
+                    &ProofDisplay {
+                        proof: attempt,
+                        current_depth: 0,
+                        max_depth: 4,
+                    }
+                    .render(document),
+                );
+                let (reason_attribute_value, reason_text) = match reason {
+                    crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable {
+                        ..
+                    } => (
+                        "not-strictly-monomially-comparable",
+                        "no proof found: not strictly monomially comparable",
+                    ),
+                    crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => {
+                        ("found-root", "no proof found: found root")
+                    }
+                };
+                proof_search_status
+                    .set_attribute_unchecked("data-proof-search-status", reason_attribute_value);
+                proof_search_status.set_text_content(Some(reason_text));
+            }
+        }
+    }
+
+    fn update(&self, document: &Document, worker: Rc<RefCell<Worker>>) {
+        let validation_result = self.validate();
+
+        match validation_result {
+            ValidationResult::Valid {
+                left_term: left,
+                right_term: right,
+            } => {
+                self.set_valid();
+                self.polynomial_view.left.set_text_content(None);
+                let left_polynomial = Polynomial::from(left.clone());
+                self.polynomial_view.left.set_text_content(None);
+                self.polynomial_view
+                    .left
+                    .append_child_unchecked(&left_polynomial.render(document));
+
+                let right_polynomial: Polynomial = Polynomial::from(right.clone());
+                self.polynomial_view.right.set_text_content(None);
+                self.polynomial_view
+                    .right
+                    .append_child_unchecked(&right_polynomial.render(document));
+
+                let disequality = TermDisequality::from_terms(left, right);
+
+                worker
+                    .borrow()
+                    .post_message(
+                        &serde_wasm_bindgen::to_value(&SearchProof { disequality })
+                            .expect("to value should work"),
+                    )
+                    .expect("post message should work");
+                setup_proof_search_status_update_debounce(
+                    &self.proof_search_status_view.status_text,
+                );
+
+                let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
+                    let proof_result = extract_proof_result_from_worker_message(event);
+                    let document = document_unchecked();
+                    let ui_elements = UIElements::get_in(&document);
+                    ui_elements.update_proof_view(&document, proof_result);
+                }) as Box<dyn FnMut(_)>);
+                worker
+                    .borrow()
+                    .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
+
+                // TODO: fix this leakage
+                worker_callback.forget();
+            }
+            ValidationResult::Invalid {
+                left_is_valid,
+                right_is_valid,
+            } => self.set_invalid(left_is_valid, right_is_valid),
+        };
+    }
+}
+
+fn update(worker: Rc<RefCell<Worker>>) {
+    let document = document_unchecked();
+    let ui_elements = UIElements::get_in(&document);
+    ui_elements.update(&document, worker)
+}
+
+fn extract_proof_result_from_worker_message(
+    event: MessageEvent,
+) -> CompletePolynomialProofSearchResult {
+    let proof_result_pointer = event.data().as_f64().expect("data must be a number") as u32;
+    let proof_result_pointer = proof_result_pointer as *mut CompletePolynomialProofSearchResult;
+    *unsafe { Box::from_raw(proof_result_pointer) }
+}
+
+fn setup_proof_search_status_update_debounce(proof_search_status: &HtmlElement) {
     proof_search_status.set_attribute_unchecked("data-proof-search-status", "in-progress");
     let set_proof_search_status_callback = Closure::wrap(Box::new(|| {
         let document = document_unchecked();
@@ -275,13 +393,13 @@ impl RenderNode for Polynomial {
     }
 }
 
-struct ProofView {
+struct ProofDisplay {
     proof: CompletePolynomialProof,
     current_depth: u32,
     max_depth: u32,
 }
 
-impl RenderNode for ProofView {
+impl RenderNode for ProofDisplay {
     fn render(self, document: &Document) -> Node {
         match self.proof {
             CompletePolynomialProof::SuccessorNonZero { conclusion } => {
@@ -359,13 +477,13 @@ impl RenderNode for ProofView {
 
                 if self.current_depth < self.max_depth {
                     // TODO: remove this repitition to callback
-                    let zero_subproof_node = ProofView {
+                    let zero_subproof_node = ProofDisplay {
                         proof: *zero_proof,
                         current_depth: self.current_depth + 1,
                         max_depth: self.max_depth,
                     }
                     .render(document);
-                    let successor_subproof_node = ProofView {
+                    let successor_subproof_node = ProofDisplay {
                         proof: *successor_proof,
                         current_depth: self.current_depth + 1,
                         max_depth: self.max_depth,
@@ -396,13 +514,13 @@ impl RenderNode for ProofView {
                     let expand_button_callback = Closure::wrap(Box::new(move |_| {
                         if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
                             let document = document_unchecked();
-                            let zero_subproof_node = ProofView {
+                            let zero_subproof_node = ProofDisplay {
                                 proof: *zero_proof.clone(),
                                 current_depth: 0,
                                 max_depth: 0,
                             }
                             .render(&document);
-                            let successor_subproof_node = ProofView {
+                            let successor_subproof_node = ProofDisplay {
                                 proof: *successor_proof.clone(),
                                 current_depth: 0,
                                 max_depth: 0,

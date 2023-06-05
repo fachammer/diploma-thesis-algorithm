@@ -46,15 +46,7 @@ impl DocumentUnchecked for Document {
 
     fn html_element_by_id_unchecked(&self, id: &str) -> HtmlElement {
         self.get_element_by_id(id)
-            .unwrap_or_else(|| {
-                panic!(
-                    "{}",
-                    format_args!("element with id '{id}' must exist")
-                        .as_str()
-                        .unwrap()
-                        .to_string()
-                )
-            })
+            .unwrap_or_else(|| panic!("{}", format_args!("element with id '{id}' must exist")))
             .unchecked_into()
     }
 
