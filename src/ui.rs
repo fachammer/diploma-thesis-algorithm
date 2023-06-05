@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashSet, fmt::Display, rc::Rc};
 use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
 use term::Term;
-use wasm_bindgen::{memory, prelude::*};
+use wasm_bindgen::prelude::*;
 use web_sys::{console, window, Document, Element, Event, InputEvent, MessageEvent, Node, Worker};
 
 use crate::{
@@ -16,15 +16,15 @@ use crate::{
     web_unchecked::{
         document_unchecked, unchecked_now, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
     },
+    worker::setup_worker,
 };
 
 pub(crate) fn setup() {
-    let worker = Rc::new(RefCell::new(
-        Worker::new("./worker.js").expect("worker must exist"),
-    ));
     let document = document_unchecked();
 
     console::log_1(&"hello".into());
+
+    let worker = setup_worker(update);
 
     let left_input = document.input_by_id_unchecked("left-term-input");
     let left_input_on_change = oninput_handler(worker.clone());
@@ -32,7 +32,7 @@ pub(crate) fn setup() {
     left_input_on_change.forget();
 
     let right_input = document.input_by_id_unchecked("right-term-input");
-    let right_input_on_change = oninput_handler(worker.clone());
+    let right_input_on_change = oninput_handler(worker);
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
@@ -41,23 +41,6 @@ pub(crate) fn setup() {
         .expect("query selector must succeed")
         .expect("there must be a body")
         .set_attribute_unchecked("style", "opacity: 1; margin-top: 0px");
-
-    let worker_clone = worker.clone();
-    let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
-        console::log_1(&"got ready message".into());
-        assert_eq!(event.data(), "ready");
-        worker_clone.borrow().set_onmessage(None);
-
-        update(worker_clone.clone());
-    }) as Box<dyn Fn(_)>);
-    worker
-        .borrow()
-        .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
-    worker
-        .borrow()
-        .post_message(&memory())
-        .expect("post message memory should work");
-    worker_callback.forget();
 }
 
 fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
