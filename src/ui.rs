@@ -4,7 +4,7 @@ use disequality::TermDisequality;
 use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, window, Document, Element, Event, InputEvent, MessageEvent, Node, Worker};
+use web_sys::{console, Document, Element, Event, InputEvent, MessageEvent, Node, Worker};
 
 use crate::{
     disequality::{self, PolynomialDisequality},
@@ -13,7 +13,8 @@ use crate::{
     proof_search::CompletePolynomialProofSearchResult,
     term,
     web_unchecked::{
-        document_unchecked, unchecked_now, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
+        document_unchecked, unchecked_now, window_unchecked, DocumentUnchecked, ElementUnchecked,
+        NodeUnchecked,
     },
     worker::setup_worker,
 };
@@ -88,7 +89,6 @@ fn validate(left_term_text: &str, right_term_text: &str) -> ValidationResult {
 }
 
 fn update(worker: Rc<RefCell<Worker>>) {
-    let window = window().expect("window must exist");
     let document = document_unchecked();
     let left_term_element = document.input_by_id_unchecked("left-term-input");
     let right_term_element = document.input_by_id_unchecked("right-term-input");
@@ -103,34 +103,6 @@ fn update(worker: Rc<RefCell<Worker>>) {
         document.html_element_by_id_unchecked("proof-search-status-view");
     let proof_search_status =
         document_unchecked().html_element_by_id_unchecked("proof-search-status");
-    proof_search_status.set_attribute_unchecked("data-proof-search-status", "in-progress");
-    let set_proof_search_status_callback = Closure::wrap(Box::new(|| {
-        let document = document_unchecked();
-        let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
-        let proof_view = document.html_element_by_id_unchecked("proof-view");
-        if proof_search_status
-            .get_attribute("data-proof-search-status")
-            .unwrap_or(String::default())
-            == "in-progress"
-        {
-            proof_view.set_text_content(None);
-            proof_search_status.set_text_content(Some("in progress..."));
-        }
-    }) as Box<dyn FnMut()>);
-    if let Some(Ok(timeout_id)) = proof_search_status
-        .get_attribute("data-timeout-id")
-        .map(|s| s.parse::<i32>())
-    {
-        window.clear_timeout_with_handle(timeout_id);
-    }
-    let timeout_id = window
-        .set_timeout_with_callback_and_timeout_and_arguments_0(
-            set_proof_search_status_callback.as_ref().unchecked_ref(),
-            50,
-        )
-        .expect("set timeout should work");
-    proof_search_status.set_attribute_unchecked("data-timeout-id", &timeout_id.to_string());
-    set_proof_search_status_callback.forget();
 
     let left_text_content = &left_term_element.text_content().unwrap_or_default();
     let right_text_content = &right_term_element.text_content().unwrap_or_default();
@@ -169,6 +141,7 @@ fn update(worker: Rc<RefCell<Worker>>) {
                         .expect("to value should work"),
                 )
                 .expect("post message should work");
+            setup_proof_search_status_update_debounce(proof_search_status);
 
             let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
                 let document = document_unchecked();
@@ -244,6 +217,37 @@ fn update(worker: Rc<RefCell<Worker>>) {
             proof_view.set_attribute_unchecked("data-visible", "false");
         }
     };
+}
+
+fn setup_proof_search_status_update_debounce(proof_search_status: web_sys::HtmlElement) {
+    proof_search_status.set_attribute_unchecked("data-proof-search-status", "in-progress");
+    let set_proof_search_status_callback = Closure::wrap(Box::new(|| {
+        let document = document_unchecked();
+        let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
+        let proof_view = document.html_element_by_id_unchecked("proof-view");
+        let proof_search_status_attribute = proof_search_status
+            .get_attribute("data-proof-search-status")
+            .unwrap_or_default();
+        if proof_search_status_attribute == "in-progress" {
+            proof_view.set_text_content(None);
+            proof_search_status.set_text_content(Some("in progress..."));
+        }
+    }) as Box<dyn FnMut()>);
+    let window = window_unchecked();
+    if let Some(Ok(timeout_id)) = proof_search_status
+        .get_attribute("data-timeout-id")
+        .map(|s| s.parse::<i32>())
+    {
+        window.clear_timeout_with_handle(timeout_id);
+    }
+    let timeout_id = window
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            set_proof_search_status_callback.as_ref().unchecked_ref(),
+            50,
+        )
+        .expect("set timeout should work");
+    proof_search_status.set_attribute_unchecked("data-timeout-id", &timeout_id.to_string());
+    set_proof_search_status_callback.forget();
 }
 
 trait RenderNode {
