@@ -195,27 +195,22 @@
         grid-template-rows: max-content auto;
       }
 
-      .proof[data-inference-type="split"] > .proof-node > .subproofs-toggle {
+      .subproofs-toggle {
+        display: none;
+      }
+
+      .inference {
+        position: relative;
+        top: 0.55em;
+      }
+
+      .proof[data-inference-type="split"] > .proof-node > .inference {
         color: #2077c2;
       }
 
-      .proof[data-inference-type="split"]
-        > .proof-node
-        > .subproofs-toggle:hover {
+      .proof[data-inference-type="split"] > .proof-node > .inference:hover {
         text-decoration: underline;
         cursor: pointer;
-      }
-
-      .proof[data-inference-type="split"][data-expanded]
-        > .proof-node
-        > .subproofs-toggle::before {
-        content: "hide subproofs";
-      }
-
-      .proof[data-inference-type="split"]:not([data-expanded])
-        > .proof-node
-        > .subproofs-toggle::before {
-        content: "show subproofs";
       }
 
       .proof[data-inference-type="found-root"] > .proof-node > .inference,

@@ -544,7 +544,7 @@ impl RenderNode for ProofDisplay {
                             .expect("toggle attribute should work");
                     })
                         as Box<dyn FnMut(Event)>);
-                    subproofs_toggle
+                    inference_node
                         .add_event_listener_with_callback(
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
@@ -580,7 +580,7 @@ impl RenderNode for ProofDisplay {
                             .expect("toggle attribute should work");
                     })
                         as Box<dyn FnMut(Event)>);
-                    subproofs_toggle
+                    inference_node
                         .add_event_listener_with_callback(
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
