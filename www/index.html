@@ -195,10 +195,6 @@
         grid-template-rows: max-content auto;
       }
 
-      .subproofs-toggle {
-        display: none;
-      }
-
       .inference {
         position: relative;
         top: 0.55em;
@@ -231,8 +227,7 @@
       }
 
       .conclusion,
-      .inference,
-      .subproofs-toggle {
+      .inference {
         text-align: center;
       }
 
@@ -251,7 +246,7 @@
       .proof > .proof-node {
         display: grid;
         grid-template-columns: auto max-content;
-        grid-template-areas: "conclusion inference" "subproofs-toggle inference";
+        grid-template-areas: "conclusion inference";
         column-gap: 5px;
       }
 
@@ -264,10 +259,6 @@
         grid-row: span 2;
         align-self: center;
         justify-self: stretch;
-      }
-
-      .proof > .proof-node > .subproofs-toggle {
-        grid-area: subproofs-toggle;
       }
 
       .subproofs {

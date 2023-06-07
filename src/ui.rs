@@ -501,14 +501,10 @@ impl RenderNode for ProofDisplay {
                 inference_node.set_attribute_unchecked("class", "inference");
                 inference_node.append_child_unchecked(&inference_text);
 
-                let subproofs_toggle = document.create_div_unchecked();
-                subproofs_toggle.set_attribute_unchecked("class", "subproofs-toggle");
-
                 let internal_proof_node = document.create_div_unchecked();
                 internal_proof_node.set_attribute_unchecked("class", "proof-node");
                 internal_proof_node.append_child_unchecked(&conclusion_node);
                 internal_proof_node.append_child_unchecked(&inference_node);
-                internal_proof_node.append_child_unchecked(&subproofs_toggle);
 
                 let proof_node = document.create_div_unchecked();
                 proof_node.set_attribute_unchecked("class", "proof");
@@ -661,15 +657,10 @@ fn render_proof_leaf(
     inference_node.set_attribute_unchecked("class", "inference");
     inference_node.append_child_unchecked(&inference_text);
 
-    let subproofs_toggle = document.create_div_unchecked();
-    subproofs_toggle.set_attribute_unchecked("class", "subproofs-toggle");
-    subproofs_toggle.append_child_unchecked(&create_phantom_height(document));
-
     let internal_proof_node = document.create_div_unchecked();
     internal_proof_node.set_attribute_unchecked("class", "proof-node");
     internal_proof_node.append_child_unchecked(&conclusion_node);
     internal_proof_node.append_child_unchecked(&inference_node);
-    internal_proof_node.append_child_unchecked(&subproofs_toggle);
 
     let proof_node = document.create_div_unchecked();
     proof_node.set_attribute_unchecked("class", "proof");
