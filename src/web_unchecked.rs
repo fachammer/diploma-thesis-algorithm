@@ -1,5 +1,5 @@
 use wasm_bindgen::JsCast;
-use web_sys::{window, Document, Element, HtmlElement, HtmlInputElement, Node, Window};
+use web_sys::{window, Document, Element, HtmlElement, HtmlInputElement, Node, Url, Window};
 
 pub(crate) trait NodeUnchecked {
     fn append_child_unchecked(&self, child: &Node) -> Node;
@@ -75,4 +75,14 @@ pub(crate) fn document_unchecked() -> Document {
 
 pub(crate) fn window_unchecked() -> Window {
     window().expect("there should be a window")
+}
+
+pub(crate) trait UrlUnchecked {
+    fn new_unchecked(url: &str) -> Url;
+}
+
+impl UrlUnchecked for Url {
+    fn new_unchecked(url: &str) -> Url {
+        Url::new(url).expect("new URL should succeed")
+    }
 }

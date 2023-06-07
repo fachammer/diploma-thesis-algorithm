@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent, Node, Worker,
+    Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent, Node, Url,
+    Worker,
 };
 
 use crate::{
@@ -16,20 +17,28 @@ use crate::{
     term,
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
+        UrlUnchecked,
     },
     worker::setup_worker,
 };
 
 pub(crate) fn setup() {
+    let url = String::from(window_unchecked().location().to_locale_string());
+    let url = Url::new_unchecked(&url);
+    let search_params = url.search_params();
+    let left_term = search_params.get("left").unwrap_or(String::from("x*x"));
+    let right_term = search_params.get("right").unwrap_or(String::from("Sx"));
     let document = document_unchecked();
     let worker = setup_worker(update);
 
-    let left_input = document.input_by_id_unchecked("left-term-input");
-    let left_input_on_change = oninput_handler(worker.clone());
+    let left_input = document.html_element_by_id_unchecked("left-term-input");
+    left_input.set_text_content(Some(&left_term));
+    let left_input_on_change: Closure<dyn Fn(InputEvent)> = oninput_handler(worker.clone());
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
-    let right_input = document.input_by_id_unchecked("right-term-input");
+    let right_input = document.html_element_by_id_unchecked("right-term-input");
+    right_input.set_text_content(Some(&right_term));
     let right_input_on_change = oninput_handler(worker);
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
