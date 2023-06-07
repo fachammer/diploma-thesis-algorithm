@@ -475,7 +475,7 @@ impl RenderNode for ProofDisplay {
                             char::try_from(v).expect("must be a valid char")
                         ),
                         number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 2,
+                        number_of_smallest_monomials: 3,
                         exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                     PolynomialDisplay {
@@ -484,7 +484,7 @@ impl RenderNode for ProofDisplay {
                             char::try_from(v).expect("must be a valid char")
                         ),
                         number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 2,
+                        number_of_smallest_monomials: 3,
                         exponent_display_style: ExponentDisplayStyle::SuperscriptTag
                     },
                 ));
@@ -639,14 +639,14 @@ fn render_proof_leaf(
             polynomial: &conclusion.left,
             variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
             number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 2,
+            number_of_smallest_monomials: 3,
             exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
         PolynomialDisplay {
             polynomial: &conclusion.right,
             variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
             number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 2,
+            number_of_smallest_monomials: 3,
             exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
         },
     ));
