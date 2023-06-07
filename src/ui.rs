@@ -1,6 +1,7 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
+use js_sys::encode_uri_component;
 use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
@@ -283,6 +284,23 @@ impl UIElements {
                 right_term: right,
             } => {
                 self.set_valid();
+
+                let left_term_input = self.left_term_text();
+                let right_term_input = self.right_term_text();
+                window_unchecked()
+                    .history()
+                    .expect("history should exist")
+                    .replace_state_with_url(
+                        &JsValue::TRUE,
+                        "",
+                        Some(&format!(
+                            "?left={}&right={}",
+                            encode_uri_component(&left_term_input),
+                            encode_uri_component(&right_term_input)
+                        )),
+                    )
+                    .expect("push state should not fail");
+
                 self.polynomial_view.left.set_text_content(None);
                 let left_polynomial = Polynomial::from(left.clone());
                 self.polynomial_view.left.set_text_content(None);
