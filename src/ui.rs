@@ -29,18 +29,23 @@ pub(crate) fn setup() {
     let search_params = url.search_params();
     let left_term = search_params.get("left").unwrap_or(String::from("x*x"));
     let right_term = search_params.get("right").unwrap_or(String::from("Sx"));
+    let max_initial_proof_depth = search_params
+        .get("max-initial-proof-depth")
+        .unwrap_or_default();
+    let max_initial_proof_depth = max_initial_proof_depth.parse().unwrap_or(4);
     let document = document_unchecked();
-    let worker = setup_worker(update);
+    let worker = setup_worker(move |worker| update(worker, max_initial_proof_depth));
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
     left_input.set_text_content(Some(&left_term));
-    let left_input_on_change: Closure<dyn Fn(InputEvent)> = oninput_handler(worker.clone());
+    let left_input_on_change: Closure<dyn Fn(InputEvent)> =
+        oninput_handler(worker.clone(), max_initial_proof_depth);
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
     let right_input = document.html_element_by_id_unchecked("right-term-input");
     right_input.set_text_content(Some(&right_term));
-    let right_input_on_change = oninput_handler(worker);
+    let right_input_on_change = oninput_handler(worker, max_initial_proof_depth);
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
@@ -49,9 +54,12 @@ pub(crate) fn setup() {
         .set_attribute_unchecked("data-webassembly-ready", "");
 }
 
-fn oninput_handler(worker: Rc<RefCell<Worker>>) -> Closure<dyn Fn(InputEvent)> {
+fn oninput_handler(
+    worker: Rc<RefCell<Worker>>,
+    max_initial_proof_depth: u32,
+) -> Closure<dyn Fn(InputEvent)> {
     Closure::wrap(Box::new(move |_| {
-        update(worker.clone());
+        update(worker.clone(), max_initial_proof_depth);
     }))
 }
 
@@ -230,6 +238,7 @@ impl UIElements {
         &self,
         document: &Document,
         proof_result: CompletePolynomialProofSearchResult,
+        max_initial_proof_depth: u32,
     ) {
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
@@ -240,7 +249,7 @@ impl UIElements {
                     &ProofDisplay {
                         proof,
                         current_depth: 0,
-                        max_depth: 4,
+                        max_depth: max_initial_proof_depth,
                     }
                     .render(document),
                 );
@@ -253,7 +262,7 @@ impl UIElements {
                     &ProofDisplay {
                         proof: attempt,
                         current_depth: 0,
-                        max_depth: 4,
+                        max_depth: max_initial_proof_depth,
                     }
                     .render(document),
                 );
@@ -275,7 +284,12 @@ impl UIElements {
         }
     }
 
-    fn update(&self, document: &Document, worker: Rc<RefCell<Worker>>) {
+    fn update(
+        &self,
+        document: &Document,
+        worker: Rc<RefCell<Worker>>,
+        max_initial_proof_depth: u32,
+    ) {
         self.update_history();
         let validation_result = self.validate();
 
@@ -316,7 +330,7 @@ impl UIElements {
                     let proof_result = extract_proof_result_from_worker_message(event);
                     let document = document_unchecked();
                     let ui_elements = UIElements::get_in(&document);
-                    ui_elements.update_proof_view(&document, proof_result);
+                    ui_elements.update_proof_view(&document, proof_result, max_initial_proof_depth);
                 }) as Box<dyn FnMut(_)>);
                 worker
                     .borrow()
@@ -351,10 +365,10 @@ impl UIElements {
     }
 }
 
-fn update(worker: Rc<RefCell<Worker>>) {
+fn update(worker: Rc<RefCell<Worker>>, max_initial_proof_depth: u32) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
-    ui_elements.update(&document, worker)
+    ui_elements.update(&document, worker, max_initial_proof_depth);
 }
 
 fn extract_proof_result_from_worker_message(
