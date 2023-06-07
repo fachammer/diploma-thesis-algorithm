@@ -497,9 +497,13 @@ impl RenderNode for ProofDisplay {
                     "split on {}",
                     char::try_from(variable).expect("must be a valid char")
                 ));
+                let inference_tooltip = document.create_div_unchecked();
+                inference_tooltip.set_attribute_unchecked("class", "tooltip");
                 let inference_node = document.create_div_unchecked();
                 inference_node.set_attribute_unchecked("class", "inference");
+                inference_node.set_title("show subproofs");
                 inference_node.append_child_unchecked(&inference_text);
+                inference_node.append_child_unchecked(&inference_tooltip);
 
                 let internal_proof_node = document.create_div_unchecked();
                 internal_proof_node.set_attribute_unchecked("class", "proof-node");
@@ -512,6 +516,7 @@ impl RenderNode for ProofDisplay {
                 proof_node.append_child_unchecked(&internal_proof_node);
 
                 let proof_node_clone = proof_node.clone();
+                let inference_node_clone = inference_node.clone();
 
                 if self.current_depth < self.max_depth {
                     // TODO: remove this repitition to callback
@@ -533,11 +538,17 @@ impl RenderNode for ProofDisplay {
                     subproofs_node.append_child_unchecked(&successor_subproof_node);
                     proof_node.append_child_unchecked(&subproofs_node);
                     proof_node.set_attribute_unchecked("data-expanded", "");
+                    inference_node.set_title("hide subproofs");
 
                     let expand_button_callback = Closure::wrap(Box::new(move |_| {
                         proof_node_clone
                             .toggle_attribute("data-expanded")
                             .expect("toggle attribute should work");
+                        if proof_node_clone.has_attribute("data-expanded") {
+                            inference_node_clone.set_title("hide subproofs");
+                        } else {
+                            inference_node_clone.set_title("show subproofs");
+                        }
                     })
                         as Box<dyn FnMut(Event)>);
                     inference_node
@@ -574,6 +585,11 @@ impl RenderNode for ProofDisplay {
                         proof_node_clone
                             .toggle_attribute("data-expanded")
                             .expect("toggle attribute should work");
+                        if proof_node_clone.has_attribute("data-expanded") {
+                            inference_node_clone.set_title("hide subproofs");
+                        } else {
+                            inference_node_clone.set_title("show subproofs");
+                        }
                     })
                         as Box<dyn FnMut(Event)>);
                     inference_node
