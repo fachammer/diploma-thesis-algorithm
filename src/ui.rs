@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent, Node, Url,
-    Worker,
+    console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
+    Node, Url, Worker,
 };
 
 use crate::{
@@ -23,31 +23,68 @@ use crate::{
     worker::setup_worker,
 };
 
+#[derive(Clone)]
+struct UrlParameters {
+    left_term: Option<String>,
+    right_term: Option<String>,
+    max_initial_proof_depth: Option<u32>,
+    hide_intro: Option<bool>,
+}
+
+impl UrlParameters {
+    fn from_url(url: Url) -> Self {
+        let search_params = url.search_params();
+        let left_term = search_params.get("left");
+        let right_term = search_params.get("right");
+        let max_initial_proof_depth = search_params
+            .get("max-initial-proof-depth")
+            .and_then(|m| m.parse::<u32>().ok());
+        let hide_intro = search_params
+            .get("hide-intro")
+            .and_then(|h| h.parse::<bool>().ok());
+        console::log_1(&hide_intro.into());
+
+        Self {
+            left_term,
+            right_term,
+            max_initial_proof_depth,
+            hide_intro,
+        }
+    }
+}
+
 pub(crate) fn setup() {
     let url = String::from(window_unchecked().location().to_locale_string());
-    let url = Url::new_unchecked(&url);
-    let search_params = url.search_params();
-    let left_term = search_params.get("left").unwrap_or(String::from("x*x"));
-    let right_term = search_params.get("right").unwrap_or(String::from("Sx"));
-    let max_initial_proof_depth = search_params
-        .get("max-initial-proof-depth")
-        .unwrap_or_default();
-    let max_initial_proof_depth = max_initial_proof_depth.parse().unwrap_or(4);
+    let parameters = UrlParameters::from_url(Url::new_unchecked(&url));
+
     let document = document_unchecked();
-    let worker = setup_worker(move |worker| update(worker, max_initial_proof_depth));
+    let parameters_clone = parameters.clone();
+    let worker = setup_worker(move |worker| update(worker, &parameters_clone));
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
-    left_input.set_text_content(Some(&left_term));
+    left_input.set_text_content(Some(
+        &parameters.left_term.clone().unwrap_or(String::from("x*x")),
+    ));
+    let parameters_clone = parameters.clone();
     let left_input_on_change: Closure<dyn Fn(InputEvent)> =
-        oninput_handler(worker.clone(), max_initial_proof_depth);
+        oninput_handler(worker.clone(), parameters_clone);
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
     left_input_on_change.forget();
 
     let right_input = document.html_element_by_id_unchecked("right-term-input");
-    right_input.set_text_content(Some(&right_term));
-    let right_input_on_change = oninput_handler(worker, max_initial_proof_depth);
+    right_input.set_text_content(Some(
+        &parameters.right_term.clone().unwrap_or(String::from("Sx")),
+    ));
+    let right_input_on_change = oninput_handler(worker, parameters.clone());
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
+
+    let hide_intro = parameters.hide_intro.unwrap_or(false);
+    if hide_intro {
+        document
+            .html_element_by_id_unchecked("introduction")
+            .set_attribute_unchecked("hidden", "true");
+    }
 
     document
         .body_unchecked()
@@ -56,10 +93,10 @@ pub(crate) fn setup() {
 
 fn oninput_handler(
     worker: Rc<RefCell<Worker>>,
-    max_initial_proof_depth: u32,
+    parameters: UrlParameters,
 ) -> Closure<dyn Fn(InputEvent)> {
     Closure::wrap(Box::new(move |_| {
-        update(worker.clone(), max_initial_proof_depth);
+        update(worker.clone(), &parameters.clone());
     }))
 }
 
@@ -288,9 +325,9 @@ impl UIElements {
         &self,
         document: &Document,
         worker: Rc<RefCell<Worker>>,
-        max_initial_proof_depth: u32,
+        url_parameters: &UrlParameters,
     ) {
-        self.update_history();
+        self.update_history(url_parameters);
         let validation_result = self.validate();
 
         match validation_result {
@@ -326,6 +363,7 @@ impl UIElements {
                     &self.proof_search_status_view.status_text,
                 );
 
+                let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
                 let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
                     let proof_result = extract_proof_result_from_worker_message(event);
                     let document = document_unchecked();
@@ -346,9 +384,23 @@ impl UIElements {
         };
     }
 
-    fn update_history(&self) {
+    fn update_history(&self, url_parameters: &UrlParameters) {
         let left_term_input = self.left_term_text();
         let right_term_input = self.right_term_text();
+        let max_initial_depth_param = url_parameters
+            .max_initial_proof_depth
+            .map(|m| {
+                format!(
+                    "&max-initial-proof-depth={}",
+                    encode_uri_component(&m.to_string())
+                )
+            })
+            .unwrap_or_default();
+        let hide_intro_param = url_parameters
+            .hide_intro
+            .map(|h| format!("&hide-intro={}", encode_uri_component(&h.to_string())))
+            .unwrap_or_default();
+
         window_unchecked()
             .history()
             .expect("history should exist")
@@ -356,7 +408,7 @@ impl UIElements {
                 &JsValue::TRUE,
                 "",
                 Some(&format!(
-                    "?left={}&right={}",
+                    "?left={}&right={}{max_initial_depth_param}{hide_intro_param}",
                     encode_uri_component(&left_term_input),
                     encode_uri_component(&right_term_input)
                 )),
@@ -365,10 +417,10 @@ impl UIElements {
     }
 }
 
-fn update(worker: Rc<RefCell<Worker>>, max_initial_proof_depth: u32) {
+fn update(worker: Rc<RefCell<Worker>>, parameters: &UrlParameters) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
-    ui_elements.update(&document, worker, max_initial_proof_depth);
+    ui_elements.update(&document, worker, parameters);
 }
 
 fn extract_proof_result_from_worker_message(
