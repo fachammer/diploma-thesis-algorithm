@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 
-<html lang="en" manifest="./manifest.appcache">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <link rel="manifest" href="manifest.json" />
     <title>
       Decidability of Diophantine equations in a theory adjacent to IOpen
     </title>
@@ -292,6 +293,30 @@
       async function init() {
         fetch("worker.js");
         await wasm_bindgen("pkg/thesis_algorithm_bg.wasm");
+
+        const registerServiceWorker = async () => {
+          if ("serviceWorker" in navigator) {
+            try {
+              const registration = await navigator.serviceWorker.register(
+                "service-worker.js",
+                {
+                  scope: "./",
+                }
+              );
+              if (registration.installing) {
+                console.log("Service worker installing");
+              } else if (registration.waiting) {
+                console.log("Service worker installed");
+              } else if (registration.active) {
+                console.log("Service worker active");
+              }
+            } catch (error) {
+              console.error(`Registration failed with ${error}`);
+            }
+          }
+        };
+
+        registerServiceWorker();
 
         wasm_bindgen.main();
       }
