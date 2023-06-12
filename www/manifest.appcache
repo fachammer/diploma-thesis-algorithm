@@ -1,9 +1,13 @@
 CACHE MANIFEST
 #Version 0.1
 
+CACHE:
 index.html
 diploma-thesis.pdf
 worker.js
 fonts/Roboto-Regular.woff2
 pkg/thesis_algorithm_bg.wasm
 pkg/thesis_algorithm.js
+
+NETWORK:
+*
