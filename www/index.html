@@ -288,40 +288,32 @@
   </head>
 
   <body>
-    <script src="pkg/thesis_algorithm.js"></script>
-    <script>
-      async function init() {
-        fetch("worker.js");
-        await wasm_bindgen("pkg/thesis_algorithm_bg.wasm");
+    <script src="pkg/thesis_algorithm.js" type="module"></script>
+    <script type="module">
+      import wasm_init from "./pkg/thesis_algorithm.js";
+      const wasm_module = await wasm_init("pkg/thesis_algorithm_bg.wasm");
 
-        const registerServiceWorker = async () => {
-          if ("serviceWorker" in navigator) {
-            try {
-              const registration = await navigator.serviceWorker.register(
-                "service-worker.js",
-                {
-                  scope: "./",
-                }
-              );
-              if (registration.installing) {
-                console.log("Service worker installing");
-              } else if (registration.waiting) {
-                console.log("Service worker installed");
-              } else if (registration.active) {
-                console.log("Service worker active");
-              }
-            } catch (error) {
-              console.error(`Registration failed with ${error}`);
+      if ("serviceWorker" in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register(
+            "service-worker.js",
+            {
+              scope: "./",
             }
+          );
+          if (registration.installing) {
+            console.log("Service worker installing");
+          } else if (registration.waiting) {
+            console.log("Service worker installed");
+          } else if (registration.active) {
+            console.log("Service worker active");
           }
-        };
-
-        registerServiceWorker();
-
-        wasm_bindgen.main();
+        } catch (error) {
+          console.error(`Registration failed with ${error}`);
+        }
       }
 
-      init();
+      wasm_module.main();
     </script>
     <main>
       <h1>

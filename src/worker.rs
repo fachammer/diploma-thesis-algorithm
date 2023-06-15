@@ -1,13 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
 use wasm_bindgen::{memory, prelude::Closure, JsCast};
-use web_sys::{console, MessageEvent, Worker};
+use web_sys::{console, MessageEvent, Worker, WorkerOptions};
 
 pub(crate) fn setup_worker<F: Fn(Rc<RefCell<Worker>>) + 'static>(
     onready: F,
 ) -> Rc<RefCell<Worker>> {
+    let mut worker_options = WorkerOptions::new();
+    worker_options.type_(web_sys::WorkerType::Module);
     let worker = Rc::new(RefCell::new(
-        Worker::new("./worker.js").expect("worker must exist"),
+        Worker::new_with_options("./worker.js", &worker_options).expect("worker must exist"),
     ));
 
     let worker_clone = worker.clone();
