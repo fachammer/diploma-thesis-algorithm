@@ -7,7 +7,7 @@ use term::Term;
 use wasm_bindgen::prelude::*;
 use web_sys::{
     console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
-    Node, Url, Worker,
+    Node, Url,
 };
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
     },
-    worker::setup_worker,
+    worker::ProofSearchWorker,
 };
 
 #[derive(Clone)]
@@ -53,13 +53,15 @@ impl UrlParameters {
     }
 }
 
-pub(crate) fn setup() {
+pub(crate) async fn setup() {
     let url = String::from(window_unchecked().location().to_locale_string());
     let parameters = UrlParameters::from_url(Url::new_unchecked(&url));
 
     let document = document_unchecked();
-    let parameters_clone = parameters.clone();
-    let worker = setup_worker(move |worker| update(worker, &parameters_clone));
+    let worker = ProofSearchWorker::new().await;
+    let worker = Rc::new(RefCell::new(worker));
+
+    update(worker.clone(), &parameters);
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
     left_input.set_text_content(Some(
@@ -92,7 +94,7 @@ pub(crate) fn setup() {
 }
 
 fn oninput_handler(
-    worker: Rc<RefCell<Worker>>,
+    worker: Rc<RefCell<ProofSearchWorker>>,
     parameters: UrlParameters,
 ) -> Closure<dyn Fn(InputEvent)> {
     Closure::wrap(Box::new(move |_| {
@@ -324,7 +326,7 @@ impl UIElements {
     fn update(
         &self,
         document: &Document,
-        worker: Rc<RefCell<Worker>>,
+        worker: Rc<RefCell<ProofSearchWorker>>,
         url_parameters: &UrlParameters,
     ) {
         self.update_history(url_parameters);
@@ -354,6 +356,7 @@ impl UIElements {
 
                 worker
                     .borrow()
+                    .worker
                     .post_message(
                         &serde_wasm_bindgen::to_value(&SearchProof { disequality })
                             .expect("to value should work"),
@@ -372,6 +375,7 @@ impl UIElements {
                 }) as Box<dyn FnMut(_)>);
                 worker
                     .borrow()
+                    .worker
                     .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
 
                 // TODO: fix this leakage
@@ -417,7 +421,7 @@ impl UIElements {
     }
 }
 
-fn update(worker: Rc<RefCell<Worker>>, parameters: &UrlParameters) {
+fn update(worker: Rc<RefCell<ProofSearchWorker>>, parameters: &UrlParameters) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
     ui_elements.update(&document, worker, parameters);

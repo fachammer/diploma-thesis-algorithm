@@ -16,6 +16,7 @@ use wasm_bindgen::{
     prelude::{wasm_bindgen, Closure},
     JsCast, JsValue,
 };
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{console, DedicatedWorkerGlobalScope, MessageEvent};
 
 mod parse;
@@ -25,9 +26,7 @@ mod ui;
 pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    ui::setup();
-
-    console::log_1(&"main ended".into());
+    spawn_local(ui::setup());
 }
 
 #[wasm_bindgen]
