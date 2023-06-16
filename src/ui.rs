@@ -577,12 +577,10 @@ impl RenderNode for ProofDisplay {
                         }
                     })
                         as Box<dyn FnMut(Event)>);
-                    inference_node
-                        .add_event_listener_with_callback(
+                    inference_node.add_event_listener_with_callback_unchecked(
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
-                        )
-                        .expect("add event listener should work");
+                    );
                     // TODO: fix this leakage
                     expand_button_callback.forget();
                 } else {
@@ -618,12 +616,10 @@ impl RenderNode for ProofDisplay {
                         }
                     })
                         as Box<dyn FnMut(Event)>);
-                    inference_node
-                        .add_event_listener_with_callback(
+                    inference_node.add_event_listener_with_callback_unchecked(
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
-                        )
-                        .expect("add event listener should work");
+                    );
                     // TODO: fix this leakage
                     expand_button_callback.forget();
                 }
