@@ -1,6 +1,7 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, future::Future, pin::Pin, rc::Rc, task::Waker};
 
 use disequality::TermDisequality;
+use futures::{pin_mut, select_biased, FutureExt};
 use js_sys::encode_uri_component;
 use serde::{Deserialize, Serialize};
 use term::Term;
@@ -16,9 +17,10 @@ use crate::{
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
     term,
+    timeout::timeout,
     web_unchecked::{
-        document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
-        UrlUnchecked,
+        document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked,
+        EventTargetUnchecked, NodeUnchecked, UrlUnchecked,
     },
     worker::ProofSearchWorker,
 };
@@ -351,11 +353,14 @@ impl UIElements {
                     .append_child_unchecked(&right_polynomial.render(document));
 
                 let disequality = TermDisequality::from_terms(left, right);
-                setup_proof_search_status_update_debounce(
-                    &self.proof_search_status_view.status_text,
-                );
+                let proof_search_result = worker.search_proof(disequality).fuse();
+                pin_mut!(proof_search_result);
 
-                let proof_result = worker.search_proof(disequality).await;
+                let proof_result = select_biased! {
+                    result = proof_search_result => result,
+                    () = timeout(50).fuse() => proof_search_result.await,
+                };
+
                 let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
                 self.update_proof_view(document, proof_result, max_initial_proof_depth);
             }
@@ -403,37 +408,6 @@ async fn update(worker: ProofSearchWorker, parameters: UrlParameters) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
     ui_elements.update(&document, worker, &parameters).await;
-}
-
-fn setup_proof_search_status_update_debounce(proof_search_status: &HtmlElement) {
-    proof_search_status.set_attribute_unchecked("data-proof-search-status", "in-progress");
-    let set_proof_search_status_callback = Closure::wrap(Box::new(|| {
-        let document = document_unchecked();
-        let proof_search_status = document.html_element_by_id_unchecked("proof-search-status");
-        let proof_view = document.html_element_by_id_unchecked("proof-view");
-        let proof_search_status_attribute = proof_search_status
-            .get_attribute("data-proof-search-status")
-            .unwrap_or_default();
-        if proof_search_status_attribute == "in-progress" {
-            proof_view.set_text_content(None);
-            proof_search_status.set_text_content(Some("in progress..."));
-        }
-    }) as Box<dyn FnMut()>);
-    let window = window_unchecked();
-    if let Some(Ok(timeout_id)) = proof_search_status
-        .get_attribute("data-timeout-id")
-        .map(|s| s.parse::<i32>())
-    {
-        window.clear_timeout_with_handle(timeout_id);
-    }
-    let timeout_id = window
-        .set_timeout_with_callback_and_timeout_and_arguments_0(
-            set_proof_search_status_callback.as_ref().unchecked_ref(),
-            50,
-        )
-        .expect("set timeout should work");
-    proof_search_status.set_attribute_unchecked("data-timeout-id", &timeout_id.to_string());
-    set_proof_search_status_callback.forget();
 }
 
 trait RenderNode {
@@ -578,8 +552,8 @@ impl RenderNode for ProofDisplay {
                     })
                         as Box<dyn FnMut(Event)>);
                     inference_node.add_event_listener_with_callback_unchecked(
-                            "click",
-                            expand_button_callback.as_ref().unchecked_ref(),
+                        "click",
+                        expand_button_callback.as_ref().unchecked_ref(),
                     );
                     // TODO: fix this leakage
                     expand_button_callback.forget();
@@ -617,8 +591,8 @@ impl RenderNode for ProofDisplay {
                     })
                         as Box<dyn FnMut(Event)>);
                     inference_node.add_event_listener_with_callback_unchecked(
-                            "click",
-                            expand_button_callback.as_ref().unchecked_ref(),
+                        "click",
+                        expand_button_callback.as_ref().unchecked_ref(),
                     );
                     // TODO: fix this leakage
                     expand_button_callback.forget();

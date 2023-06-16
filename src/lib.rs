@@ -5,6 +5,7 @@ mod proof;
 pub mod proof_search;
 mod substitution;
 mod term;
+mod timeout;
 mod web_unchecked;
 mod worker;
 
