@@ -3,6 +3,12 @@ use std::{cell::RefCell, future::Future, rc::Rc, task::Poll};
 use wasm_bindgen::{memory, prelude::Closure, JsCast};
 use web_sys::{console, MessageEvent, Worker, WorkerOptions};
 
+use crate::{
+    disequality::TermDisequality, proof_search::CompletePolynomialProofSearchResult,
+    ui::SearchProof,
+};
+
+#[derive(Clone)]
 pub(crate) struct ProofSearchWorker {
     pub(crate) worker: Worker,
 }
@@ -13,28 +19,49 @@ impl ProofSearchWorker {
         worker_options.type_(web_sys::WorkerType::Module);
         let worker =
             Worker::new_with_options("./worker.js", &worker_options).expect("worker must exist");
-        WorkerReady::new(&worker).await;
+        worker
+            .post_message(&memory())
+            .expect("post message memory should work");
+        let message = WorkerMessage::new(&worker).await;
+        assert_eq!(message.data(), "ready");
         Self { worker }
+    }
+
+    pub(crate) async fn search_proof(
+        &self,
+        disequality: TermDisequality,
+    ) -> CompletePolynomialProofSearchResult {
+        let search_proof_request = SearchProof { disequality };
+        let search_proof_request =
+            serde_wasm_bindgen::to_value(&search_proof_request).expect("to value should work");
+        self.worker
+            .post_message(&search_proof_request)
+            .expect("post message should work");
+
+        let message = WorkerMessage::new(&self.worker).await;
+        let proof_result_pointer = message.data().as_f64().expect("data must be a number") as u32;
+        let proof_result_pointer = proof_result_pointer as *mut CompletePolynomialProofSearchResult;
+        *unsafe { Box::from_raw(proof_result_pointer) }
     }
 }
 
-struct WorkerReady<'a> {
+struct WorkerMessage<'a> {
     worker: &'a Worker,
-    is_ready: Rc<RefCell<bool>>,
+    message: Rc<RefCell<Option<MessageEvent>>>,
     worker_message_callback: Option<Closure<dyn FnMut(MessageEvent)>>,
 }
 
-impl<'a> WorkerReady<'a> {
-    fn new(worker: &'a Worker) -> WorkerReady {
+impl<'a> WorkerMessage<'a> {
+    fn new(worker: &'a Worker) -> WorkerMessage {
         Self {
             worker,
-            is_ready: Rc::new(RefCell::new(false)),
+            message: Rc::new(RefCell::new(None)),
             worker_message_callback: None,
         }
     }
 }
 
-impl Drop for WorkerReady<'_> {
+impl Drop for WorkerMessage<'_> {
     fn drop(&mut self) {
         if let Some(callback) = &self.worker_message_callback {
             self.worker
@@ -44,24 +71,23 @@ impl Drop for WorkerReady<'_> {
     }
 }
 
-impl Future for WorkerReady<'_> {
-    type Output = ();
+impl Future for WorkerMessage<'_> {
+    type Output = MessageEvent;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Self::Output> {
-        let is_ready = *self.is_ready.borrow();
-        if is_ready {
-            Poll::Ready(())
+        let message = self.message.borrow().clone();
+        if let Some(message) = message {
+            Poll::Ready(message)
         } else {
             if self.worker_message_callback.is_none() {
                 let waker = cx.waker().clone();
-                let is_ready_clone = self.is_ready.clone();
+                let message_clone = self.message.clone();
                 let worker_callback = Closure::once(Box::new(move |event: MessageEvent| {
-                    assert_eq!(event.data(), "ready");
                     console::log_1(&"got ready message from async worker".into());
-                    *is_ready_clone.borrow_mut() = true;
+                    message_clone.borrow_mut().replace(event);
                     waker.wake();
                 }) as Box<dyn FnOnce(_)>);
                 self.worker
@@ -71,10 +97,6 @@ impl Future for WorkerReady<'_> {
                     )
                     .expect("add event listener should not fail");
                 self.worker_message_callback = Some(worker_callback);
-
-                self.worker
-                    .post_message(&memory())
-                    .expect("post message memory should work");
             }
 
             Poll::Pending

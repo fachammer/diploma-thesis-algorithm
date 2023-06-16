@@ -1,13 +1,13 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::fmt::Display;
 
 use disequality::TermDisequality;
 use js_sys::encode_uri_component;
 use serde::{Deserialize, Serialize};
 use term::Term;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{
-    console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, MessageEvent,
-    Node, Url,
+    console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url,
 };
 
 use crate::{
@@ -59,9 +59,9 @@ pub(crate) async fn setup() {
 
     let document = document_unchecked();
     let worker = ProofSearchWorker::new().await;
-    let worker = Rc::new(RefCell::new(worker));
-
-    update(worker.clone(), &parameters);
+    document
+        .body_unchecked()
+        .set_attribute_unchecked("data-webassembly-ready", "");
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
     left_input.set_text_content(Some(
@@ -77,7 +77,7 @@ pub(crate) async fn setup() {
     right_input.set_text_content(Some(
         &parameters.right_term.clone().unwrap_or(String::from("Sx")),
     ));
-    let right_input_on_change = oninput_handler(worker, parameters.clone());
+    let right_input_on_change = oninput_handler(worker.clone(), parameters.clone());
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
     right_input_on_change.forget();
 
@@ -88,17 +88,15 @@ pub(crate) async fn setup() {
             .set_attribute_unchecked("hidden", "true");
     }
 
-    document
-        .body_unchecked()
-        .set_attribute_unchecked("data-webassembly-ready", "");
+    update(worker, parameters.clone()).await;
 }
 
 fn oninput_handler(
-    worker: Rc<RefCell<ProofSearchWorker>>,
+    worker: ProofSearchWorker,
     parameters: UrlParameters,
 ) -> Closure<dyn Fn(InputEvent)> {
     Closure::wrap(Box::new(move |_| {
-        update(worker.clone(), &parameters.clone());
+        spawn_local(update(worker.clone(), parameters.clone()));
     }))
 }
 
@@ -323,10 +321,10 @@ impl UIElements {
         }
     }
 
-    fn update(
+    async fn update(
         &self,
         document: &Document,
-        worker: Rc<RefCell<ProofSearchWorker>>,
+        worker: ProofSearchWorker,
         url_parameters: &UrlParameters,
     ) {
         self.update_history(url_parameters);
@@ -353,33 +351,13 @@ impl UIElements {
                     .append_child_unchecked(&right_polynomial.render(document));
 
                 let disequality = TermDisequality::from_terms(left, right);
-
-                worker
-                    .borrow()
-                    .worker
-                    .post_message(
-                        &serde_wasm_bindgen::to_value(&SearchProof { disequality })
-                            .expect("to value should work"),
-                    )
-                    .expect("post message should work");
                 setup_proof_search_status_update_debounce(
                     &self.proof_search_status_view.status_text,
                 );
 
+                let proof_result = worker.search_proof(disequality).await;
                 let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
-                let worker_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
-                    let proof_result = extract_proof_result_from_worker_message(event);
-                    let document = document_unchecked();
-                    let ui_elements = UIElements::get_in(&document);
-                    ui_elements.update_proof_view(&document, proof_result, max_initial_proof_depth);
-                }) as Box<dyn FnMut(_)>);
-                worker
-                    .borrow()
-                    .worker
-                    .set_onmessage(Some(worker_callback.as_ref().unchecked_ref()));
-
-                // TODO: fix this leakage
-                worker_callback.forget();
+                self.update_proof_view(document, proof_result, max_initial_proof_depth);
             }
             ValidationResult::Invalid {
                 left_is_valid,
@@ -421,18 +399,10 @@ impl UIElements {
     }
 }
 
-fn update(worker: Rc<RefCell<ProofSearchWorker>>, parameters: &UrlParameters) {
+async fn update(worker: ProofSearchWorker, parameters: UrlParameters) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
-    ui_elements.update(&document, worker, parameters);
-}
-
-fn extract_proof_result_from_worker_message(
-    event: MessageEvent,
-) -> CompletePolynomialProofSearchResult {
-    let proof_result_pointer = event.data().as_f64().expect("data must be a number") as u32;
-    let proof_result_pointer = proof_result_pointer as *mut CompletePolynomialProofSearchResult;
-    *unsafe { Box::from_raw(proof_result_pointer) }
+    ui_elements.update(&document, worker, &parameters).await;
 }
 
 fn setup_proof_search_status_update_debounce(proof_search_status: &HtmlElement) {
