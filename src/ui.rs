@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, future::Future, pin::Pin, rc::Rc, task::Waker};
+use std::fmt::Display;
 
 use disequality::TermDisequality;
 use futures::{pin_mut, select_biased, FutureExt};
