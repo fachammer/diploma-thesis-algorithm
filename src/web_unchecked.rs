@@ -1,5 +1,8 @@
-use wasm_bindgen::JsCast;
-use web_sys::{window, Document, Element, HtmlElement, HtmlInputElement, Node, Url, Window};
+use wasm_bindgen::{JsCast, JsValue};
+use web_sys::{
+    window, Document, Element, EventTarget, HtmlElement, HtmlInputElement, Node, Url, Window,
+    Worker,
+};
 
 pub(crate) trait NodeUnchecked {
     fn append_child_unchecked(&self, child: &Node) -> Node;
@@ -84,5 +87,45 @@ pub(crate) trait UrlUnchecked {
 impl UrlUnchecked for Url {
     fn new_unchecked(url: &str) -> Url {
         Url::new(url).expect("new URL should succeed")
+    }
+}
+
+pub(crate) trait WorkerUnchecked {
+    fn post_message_unchecked(&self, message: &JsValue);
+}
+
+impl WorkerUnchecked for Worker {
+    fn post_message_unchecked(&self, message: &JsValue) {
+        self.post_message(message)
+            .expect("post message should succeed");
+    }
+}
+
+pub(crate) trait EventTargetUnchecked {
+    fn add_event_listener_with_callback_unchecked(
+        &self,
+        type_: &str,
+        listener: &::js_sys::Function,
+    );
+    fn remove_event_listener_with_callback_unchecked(
+        &self,
+        type_: &str,
+        listener: &::js_sys::Function,
+    );
+}
+
+impl EventTargetUnchecked for EventTarget {
+    fn add_event_listener_with_callback_unchecked(&self, type_: &str, listener: &js_sys::Function) {
+        self.add_event_listener_with_callback(type_, listener)
+            .expect("add event listener should succeed")
+    }
+
+    fn remove_event_listener_with_callback_unchecked(
+        &self,
+        type_: &str,
+        listener: &js_sys::Function,
+    ) {
+        self.remove_event_listener_with_callback(type_, listener)
+            .expect("remove event listener should succeed")
     }
 }
