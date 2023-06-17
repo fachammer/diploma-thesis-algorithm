@@ -21,6 +21,3 @@ features = ["console", "Document", "Window", "InputEvent", "HtmlInputElement", "
 
 [dev-dependencies]
 proptest = "1.1.0"
-
-[package.metadata.wasm-pack.profile.profiling]
-wasm-opt = ['-O4', '-g']

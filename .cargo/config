@@ -1,0 +1,7 @@
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "-C", 
+  "link-args=-z stack-size=2097152 --max-memory=4294967296",
+  "-C",
+  "target-feature=+atomics,+bulk-memory"
+]
