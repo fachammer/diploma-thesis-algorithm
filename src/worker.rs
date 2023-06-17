@@ -15,7 +15,6 @@ use crate::{
     web_unchecked::{EventTargetUnchecked, WorkerUnchecked},
 };
 
-#[derive(Clone)]
 pub(crate) struct ProofSearchWorker {
     pub(crate) worker: AsyncWorker,
 }
@@ -49,7 +48,6 @@ impl ProofSearchWorker {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct AsyncWorker {
     worker: Worker,
 }
@@ -58,6 +56,12 @@ impl AsyncWorker {
     async fn post_message_response(&self, message: &JsValue) -> MessageEvent {
         self.worker.post_message_unchecked(message);
         WorkerMessageFuture::new(&self.worker).await
+    }
+}
+
+impl Drop for AsyncWorker {
+    fn drop(&mut self) {
+        self.worker.terminate();
     }
 }
 

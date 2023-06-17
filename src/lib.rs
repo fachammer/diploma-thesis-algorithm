@@ -1,3 +1,4 @@
+mod callback;
 mod disequality;
 mod multiset;
 mod polynomial;

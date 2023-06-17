@@ -1,7 +1,11 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
-use futures::{pin_mut, select_biased, FutureExt};
+use futures::{
+    pin_mut, select_biased,
+    stream::{AbortHandle, Abortable},
+    FutureExt,
+};
 use js_sys::encode_uri_component;
 use serde::{Deserialize, Serialize};
 use term::Term;
@@ -12,6 +16,7 @@ use web_sys::{
 };
 
 use crate::{
+    callback::callback_async,
     disequality::{self, PolynomialDisequality},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
@@ -56,31 +61,46 @@ impl UrlParameters {
 }
 
 pub(crate) async fn setup() {
-    let url = String::from(window_unchecked().location().to_locale_string());
-    let parameters = UrlParameters::from_url(Url::new_unchecked(&url));
-
     let document = document_unchecked();
-    let worker = ProofSearchWorker::new().await;
     document
         .body_unchecked()
         .set_attribute_unchecked("data-webassembly-ready", "");
+
+    let url = String::from(window_unchecked().location().to_locale_string());
+    let parameters = UrlParameters::from_url(Url::new_unchecked(&url));
+
+    let worker_abort_handle = Rc::new(RefCell::new(None));
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
     left_input.set_text_content(Some(
         &parameters.left_term.clone().unwrap_or(String::from("x*x")),
     ));
     let parameters_clone = parameters.clone();
-    let left_input_on_change: Closure<dyn Fn(InputEvent)> =
-        oninput_handler(worker.clone(), parameters_clone);
+    let worker_abort_handle_clone = worker_abort_handle.clone();
+    let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(move |_| {
+        spawn_local(update(
+            parameters_clone.clone(),
+            worker_abort_handle_clone.clone(),
+        ));
+    }));
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
+    // TODO: handle this leakage
     left_input_on_change.forget();
 
     let right_input = document.html_element_by_id_unchecked("right-term-input");
     right_input.set_text_content(Some(
         &parameters.right_term.clone().unwrap_or(String::from("Sx")),
     ));
-    let right_input_on_change = oninput_handler(worker.clone(), parameters.clone());
+    let parameters_clone = parameters.clone();
+    let worker_abort_handle_clone = worker_abort_handle.clone();
+    let right_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(move |_| {
+        spawn_local(update(
+            parameters_clone.clone(),
+            worker_abort_handle_clone.clone(),
+        ));
+    }));
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
+    // TODO: handle this leakage
     right_input_on_change.forget();
 
     let hide_intro = parameters.hide_intro.unwrap_or(false);
@@ -90,16 +110,7 @@ pub(crate) async fn setup() {
             .set_attribute_unchecked("hidden", "true");
     }
 
-    update(worker, parameters.clone()).await;
-}
-
-fn oninput_handler(
-    worker: ProofSearchWorker,
-    parameters: UrlParameters,
-) -> Closure<dyn Fn(InputEvent)> {
-    Closure::wrap(Box::new(move |_| {
-        spawn_local(update(worker.clone(), parameters.clone()));
-    }))
+    update(parameters, worker_abort_handle).await;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -326,9 +337,15 @@ impl UIElements {
     async fn update(
         &self,
         document: &Document,
-        worker: ProofSearchWorker,
         url_parameters: &UrlParameters,
+        worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>,
     ) {
+        if let Some(handle) = worker_abort_handle.borrow().as_ref() {
+            handle.abort();
+        }
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        let _ = worker_abort_handle.borrow_mut().insert(abort_handle);
+
         self.update_history(url_parameters);
         let validation_result = self.validate();
 
@@ -353,12 +370,36 @@ impl UIElements {
                     .append_child_unchecked(&right_polynomial.render(document));
 
                 let disequality = TermDisequality::from_terms(left, right);
-                let proof_search_result = worker.search_proof(disequality).fuse();
+
+                let worker = ProofSearchWorker::new().await;
+
+                let proof_search_result =
+                    Abortable::new(worker.search_proof(disequality), abort_registration).fuse();
+
                 pin_mut!(proof_search_result);
 
                 let proof_result = select_biased! {
-                    result = proof_search_result => result,
-                    () = timeout(50).fuse() => proof_search_result.await,
+                    result = proof_search_result => match result {
+                        Ok(result) => result,
+                        _ => return
+                    },
+                    () = timeout(50).fuse() => {
+                        self.proof_view.root.set_text_content(None);
+                        self.proof_search_status_view.status_text.set_text_content(Some("in progress..."));
+                        // TODO: add button that says cancel
+
+                        select_biased! {
+                            result = proof_search_result => match result {
+                                Ok(result) => result,
+                                _ => return
+                            },
+                            () = callback_async(&self.proof_search_status_view.status_text, "click").fuse() => {
+                                self.proof_search_status_view.status_text.set_attribute_unchecked("data-proof-search-status", "cancelled");
+                                self.proof_search_status_view.status_text.set_text_content(Some("cancelled"));
+                                return ;
+                            },
+                        }
+                    },
                 };
 
                 let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
@@ -404,10 +445,12 @@ impl UIElements {
     }
 }
 
-async fn update(worker: ProofSearchWorker, parameters: UrlParameters) {
+async fn update(parameters: UrlParameters, worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
-    ui_elements.update(&document, worker, &parameters).await;
+    ui_elements
+        .update(&document, &parameters, worker_abort_handle)
+        .await;
 }
 
 trait RenderNode {
