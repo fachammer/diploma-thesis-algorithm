@@ -22,7 +22,7 @@ pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
     )
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum NoProofFoundReason {
     NotStrictlyMonomiallyComparable { substitution: Substitution },
     ExistsRoot { substitution: Substitution },
@@ -62,6 +62,7 @@ pub fn search_proof(disequality: &TermDisequality) -> ProofSearchResult {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum CompletePolynomialProofSearchResult {
     ProofFound(CompletePolynomialProof),
     NoProofFound {

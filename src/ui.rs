@@ -371,7 +371,19 @@ impl UIElements {
 
                 let disequality = TermDisequality::from_terms(left, right);
 
-                let worker = ProofSearchWorker::new().await;
+                let worker = match ProofSearchWorker::new().await {
+                    Ok(worker) => worker,
+                    Err(error) => {
+                        console::log_2(&"encountered worker error".into(), &error);
+                        self.proof_search_status_view
+                            .status_text
+                            .set_attribute_unchecked("data-proof-search-status", "error");
+                        self.proof_search_status_view
+                            .status_text
+                            .set_text_content(Some("error while searching proof"));
+                        return;
+                    }
+                };
 
                 let proof_search_result =
                     Abortable::new(worker.search_proof(disequality), abort_registration).fuse();
@@ -380,7 +392,13 @@ impl UIElements {
 
                 let proof_result = select_biased! {
                     result = proof_search_result => match result {
-                        Ok(result) => result,
+                        Ok(Ok(result)) => result,
+                        Ok(Err(error)) => {
+                            console::log_2(&"encountered worker error".into(), &error);
+                            self.proof_search_status_view.status_text.set_attribute_unchecked("data-proof-search-status", "error");
+                            self.proof_search_status_view.status_text.set_text_content(Some("error while searching proof"));
+                            return ;
+                        }
                         _ => return
                     },
                     () = timeout(50).fuse() => {
@@ -390,7 +408,13 @@ impl UIElements {
 
                         select_biased! {
                             result = proof_search_result => match result {
-                                Ok(result) => result,
+                                Ok(Ok(result)) => result,
+                                Ok(Err(error)) => {
+                                    console::log_2(&"encountered worker error".into(), &error);
+                                    self.proof_search_status_view.status_text.set_attribute_unchecked("data-proof-search-status", "error");
+                                    self.proof_search_status_view.status_text.set_text_content(Some("error while searching proof"));
+                                    return ;
+                                }
                                 _ => return
                             },
                             () = callback_async(&self.proof_search_status_view.status_text, "click").fuse() => {
