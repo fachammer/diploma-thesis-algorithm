@@ -74,11 +74,11 @@ where
     TimeoutFirst(F),
 }
 
-pub(crate) async fn future_or_timeout<'a, F>(future: F, length: i32) -> Timeout<F>
+pub(crate) async fn future_or_timeout<'a, F>(future: F, duration_in_milliseconds: i32) -> Timeout<F>
 where
     F: Future + Unpin,
 {
-    let timeout_future = timeout(length);
+    let timeout_future = timeout(duration_in_milliseconds);
     pin_mut!(timeout_future);
     match futures::future::select(future, timeout_future).await {
         futures::future::Either::Left((result, _)) => Timeout::FutureFirst(result),
