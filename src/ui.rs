@@ -2,8 +2,8 @@ use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
 use futures::{
-    pin_mut, select_biased,
-    stream::{AbortHandle, Abortable},
+    pin_mut,
+    stream::{AbortHandle, Abortable, Aborted},
     FutureExt,
 };
 use js_sys::encode_uri_component;
@@ -16,13 +16,13 @@ use web_sys::{
 };
 
 use crate::{
-    callback::callback_async,
+    callback::{future_or_callback, Callback},
     disequality::{self, PolynomialDisequality},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
     term,
-    timeout::timeout,
+    timeout::{future_or_timeout, Timeout},
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked,
         EventTargetUnchecked, NodeUnchecked, UrlUnchecked,
@@ -190,6 +190,12 @@ struct UIElements {
     validation_messages: ValidationMessagesView,
 }
 
+enum ProofSearchError {
+    WorkerError(Event),
+    CancelledByUser,
+    NewInput,
+}
+
 impl UIElements {
     fn get_in(document: &Document) -> Self {
         Self {
@@ -349,91 +355,98 @@ impl UIElements {
         self.update_history(url_parameters);
         let validation_result = self.validate();
 
-        match validation_result {
-            ValidationResult::Valid {
-                left_term: left,
-                right_term: right,
-            } => {
-                self.set_valid();
-
-                self.polynomial_view.left.set_text_content(None);
-                let left_polynomial = Polynomial::from(left.clone());
-                self.polynomial_view.left.set_text_content(None);
-                self.polynomial_view
-                    .left
-                    .append_child_unchecked(&left_polynomial.render(document));
-
-                let right_polynomial: Polynomial = Polynomial::from(right.clone());
-                self.polynomial_view.right.set_text_content(None);
-                self.polynomial_view
-                    .right
-                    .append_child_unchecked(&right_polynomial.render(document));
-
-                let disequality = TermDisequality::from_terms(left, right);
-
-                let worker = match ProofSearchWorker::new().await {
-                    Ok(worker) => worker,
-                    Err(error) => {
-                        console::log_2(&"encountered worker error".into(), &error);
-                        self.proof_search_status_view
-                            .status_text
-                            .set_attribute_unchecked("data-proof-search-status", "error");
-                        self.proof_search_status_view
-                            .status_text
-                            .set_text_content(Some("error while searching proof"));
-                        return;
-                    }
-                };
-
-                let proof_search_result =
-                    Abortable::new(worker.search_proof(disequality), abort_registration).fuse();
-
-                pin_mut!(proof_search_result);
-
-                let proof_result = select_biased! {
-                    result = proof_search_result => match result {
-                        Ok(Ok(result)) => result,
-                        Ok(Err(error)) => {
-                            console::log_2(&"encountered worker error".into(), &error);
-                            self.proof_search_status_view.status_text.set_attribute_unchecked("data-proof-search-status", "error");
-                            self.proof_search_status_view.status_text.set_text_content(Some("error while searching proof"));
-                            return ;
-                        }
-                        _ => return
-                    },
-                    () = timeout(50).fuse() => {
-                        self.proof_view.root.set_text_content(None);
-                        self.proof_search_status_view.status_text.set_text_content(Some("in progress..."));
-                        // TODO: add button that says cancel
-
-                        select_biased! {
-                            result = proof_search_result => match result {
-                                Ok(Ok(result)) => result,
-                                Ok(Err(error)) => {
-                                    console::log_2(&"encountered worker error".into(), &error);
-                                    self.proof_search_status_view.status_text.set_attribute_unchecked("data-proof-search-status", "error");
-                                    self.proof_search_status_view.status_text.set_text_content(Some("error while searching proof"));
-                                    return ;
-                                }
-                                _ => return
-                            },
-                            () = callback_async(&self.proof_search_status_view.status_text, "click").fuse() => {
-                                self.proof_search_status_view.status_text.set_attribute_unchecked("data-proof-search-status", "cancelled");
-                                self.proof_search_status_view.status_text.set_text_content(Some("cancelled"));
-                                return ;
-                            },
-                        }
-                    },
-                };
-
-                let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
-                self.update_proof_view(document, proof_result, max_initial_proof_depth);
-            }
+        let (left, right) = match validation_result {
             ValidationResult::Invalid {
                 left_is_valid,
                 right_is_valid,
-            } => self.set_invalid(left_is_valid, right_is_valid),
+            } => {
+                self.set_invalid(left_is_valid, right_is_valid);
+                return;
+            }
+            ValidationResult::Valid {
+                left_term,
+                right_term,
+            } => {
+                self.set_valid();
+                (left_term, right_term)
+            }
         };
+
+        self.polynomial_view.left.set_text_content(None);
+        let left_polynomial = Polynomial::from(left.clone());
+        self.polynomial_view.left.set_text_content(None);
+        self.polynomial_view
+            .left
+            .append_child_unchecked(&left_polynomial.render(document));
+
+        let right_polynomial: Polynomial = Polynomial::from(right.clone());
+        self.polynomial_view.right.set_text_content(None);
+        self.polynomial_view
+            .right
+            .append_child_unchecked(&right_polynomial.render(document));
+
+        let disequality = TermDisequality::from_terms(left, right);
+
+        match self.search_proof(disequality, abort_registration).await {
+            Ok(proof_result) => {
+                let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
+                self.update_proof_view(document, proof_result, max_initial_proof_depth);
+            }
+            Err(ProofSearchError::WorkerError(_)) => {
+                self.proof_search_status_view
+                    .status_text
+                    .set_attribute_unchecked("data-proof-search-status", "error");
+                self.proof_search_status_view
+                    .status_text
+                    .set_text_content(Some("error while searching proof"));
+            }
+            Err(ProofSearchError::CancelledByUser) => {
+                self.proof_search_status_view
+                    .status_text
+                    .set_attribute_unchecked("data-proof-search-status", "cancelled");
+                self.proof_search_status_view
+                    .status_text
+                    .set_text_content(Some("cancelled"));
+            }
+            Err(ProofSearchError::NewInput) => {}
+        };
+    }
+
+    async fn search_proof(
+        &self,
+        disequality: TermDisequality,
+        abort_registration: futures::stream::AbortRegistration,
+    ) -> Result<CompletePolynomialProofSearchResult, ProofSearchError> {
+        let worker = ProofSearchWorker::new()
+            .await
+            .map_err(ProofSearchError::WorkerError)?;
+        let proof_search_result =
+            Abortable::new(worker.search_proof(disequality), abort_registration).fuse();
+        pin_mut!(proof_search_result);
+
+        let proof_search_result_or_abort = match future_or_timeout(proof_search_result, 50).await {
+            Timeout::FutureFirst(proof_search_result) => Callback::FutureFirst(proof_search_result),
+            Timeout::TimeoutFirst(proof_search_or_abort) => {
+                self.proof_view.root.set_text_content(None);
+                self.proof_search_status_view
+                    .status_text
+                    .set_text_content(Some("in progress..."));
+
+                future_or_callback(
+                    proof_search_or_abort,
+                    &self.proof_search_status_view.status_text,
+                    "click",
+                )
+                .await
+            }
+        };
+
+        match proof_search_result_or_abort {
+            Callback::FutureFirst(Ok(Ok(result))) => Ok(result),
+            Callback::FutureFirst(Ok(Err(error))) => Err(ProofSearchError::WorkerError(error)),
+            Callback::FutureFirst(Err(Aborted)) => Err(ProofSearchError::NewInput),
+            Callback::CallbackFirst(_) => Err(ProofSearchError::CancelledByUser),
+        }
     }
 
     fn update_history(&self, url_parameters: &UrlParameters) {

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, pin::Pin, rc::Rc, task::Waker};
 
-use futures::Future;
+use futures::{pin_mut, Future};
 use wasm_bindgen::{prelude::Closure, JsCast};
 
 use crate::web_unchecked::window_unchecked;
@@ -64,4 +64,24 @@ impl Future for SetTimeoutFuture {
 
 pub(crate) async fn timeout(timeout: i32) {
     SetTimeoutFuture::new(timeout).await
+}
+
+pub(crate) enum Timeout<F>
+where
+    F: Future,
+{
+    FutureFirst(F::Output),
+    TimeoutFirst(F),
+}
+
+pub(crate) async fn future_or_timeout<'a, F>(future: F, length: i32) -> Timeout<F>
+where
+    F: Future + Unpin,
+{
+    let timeout_future = timeout(length);
+    pin_mut!(timeout_future);
+    match futures::future::select(future, timeout_future).await {
+        futures::future::Either::Left((result, _)) => Timeout::FutureFirst(result),
+        futures::future::Either::Right((_, other)) => Timeout::TimeoutFirst(other),
+    }
 }
