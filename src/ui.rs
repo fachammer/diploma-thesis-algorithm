@@ -424,7 +424,6 @@ impl UIElements {
                     break;
                 },
                 _ = show_progress_timeout => {
-                    console::log_1(&"timeout first".into());
                     self.proof_view.root.set_text_content(None);
                     self.proof_search_status_view
                         .status_text
@@ -438,8 +437,23 @@ impl UIElements {
     async fn worker_proof_search(
         disequality: TermDisequality,
     ) -> Result<CompletePolynomialProofSearchResult, Event> {
+        let performance = window_unchecked().performance().expect("must exist");
+        let start = performance.now();
         let worker = ProofSearchWorker::new().await?;
-        worker.search_proof(disequality).await
+        let worker_startup_end = performance.now();
+        console::log_3(
+            &"worker startup took".into(),
+            &(worker_startup_end - start).into(),
+            &"milliseconds".into(),
+        );
+        let result = worker.search_proof(disequality).await;
+        let search_proof_end = performance.now();
+        console::log_3(
+            &"waiting for worker result took".into(),
+            &(search_proof_end - worker_startup_end).into(),
+            &"milliseconds".into(),
+        );
+        result
     }
 
     fn update_history(&self, url_parameters: &UrlParameters) {
