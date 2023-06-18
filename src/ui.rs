@@ -4,7 +4,7 @@ use disequality::TermDisequality;
 use futures::{
     pin_mut, select_biased,
     stream::{AbortHandle, Abortable, Aborted},
-    FutureExt, TryFuture,
+    FutureExt,
 };
 use js_sys::encode_uri_component;
 use serde::{Deserialize, Serialize};
@@ -16,13 +16,13 @@ use web_sys::{
 };
 
 use crate::{
-    callback::{callback_async, future_or_callback, Callback},
+    callback::callback_async,
     disequality::{self, PolynomialDisequality},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
     term,
-    timeout::{future_or_timeout, timeout, Timeout},
+    timeout::timeout,
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked,
         EventTargetUnchecked, NodeUnchecked, UrlUnchecked,
@@ -188,12 +188,6 @@ struct UIElements {
     proof_search_status_view: ProofSearchStatusView,
     proof_view: ProofView,
     validation_messages: ValidationMessagesView,
-}
-
-enum ProofSearchError {
-    WorkerError(Event),
-    CancelledByUser,
-    NewInput,
 }
 
 impl UIElements {
@@ -414,13 +408,13 @@ impl UIElements {
                         self.proof_search_status_view
                             .status_text
                             .set_text_content(Some("error while searching proof"));
-                        continue;
+                        break;
                     },
                     Err(Aborted) => {
                         break;
                     }
                 },
-                () = cancel_button_pressed => {
+                _ = cancel_button_pressed => {
                     self.proof_search_status_view
                         .status_text
                         .set_attribute_unchecked("data-proof-search-status", "cancelled");
@@ -429,11 +423,13 @@ impl UIElements {
                         .set_text_content(Some("cancelled"));
                     break;
                 },
-                () = show_progress_timeout => {
+                _ = show_progress_timeout => {
+                    console::log_1(&"timeout first".into());
                     self.proof_view.root.set_text_content(None);
                     self.proof_search_status_view
                         .status_text
                         .set_text_content(Some("in progress..."));
+                    continue;
                 }
             }
         }
