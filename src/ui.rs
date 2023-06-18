@@ -2,9 +2,9 @@ use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use disequality::TermDisequality;
 use futures::{
-    pin_mut,
+    pin_mut, select_biased,
     stream::{AbortHandle, Abortable, Aborted},
-    FutureExt,
+    FutureExt, TryFuture,
 };
 use js_sys::encode_uri_component;
 use serde::{Deserialize, Serialize};
@@ -16,13 +16,13 @@ use web_sys::{
 };
 
 use crate::{
-    callback::{future_or_callback, Callback},
+    callback::{callback_async, future_or_callback, Callback},
     disequality::{self, PolynomialDisequality},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
     term,
-    timeout::{future_or_timeout, Timeout},
+    timeout::{future_or_timeout, timeout, Timeout},
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked,
         EventTargetUnchecked, NodeUnchecked, UrlUnchecked,
@@ -387,66 +387,63 @@ impl UIElements {
 
         let disequality = TermDisequality::from_terms(left, right);
 
-        match self.search_proof(disequality, abort_registration).await {
-            Ok(proof_result) => {
-                let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
-                self.update_proof_view(document, proof_result, max_initial_proof_depth);
+        let search_proof_result = Self::worker_proof_search(disequality);
+        let abortable_search_proof_result =
+            Abortable::new(search_proof_result, abort_registration).fuse();
+        pin_mut!(abortable_search_proof_result);
+
+        let show_progress_timeout = timeout(50).fuse();
+        pin_mut!(show_progress_timeout);
+
+        let cancel_button_pressed =
+            callback_async(&self.proof_search_status_view.status_text, "click").fuse();
+        pin_mut!(cancel_button_pressed);
+
+        loop {
+            select_biased! {
+                result = abortable_search_proof_result => match result {
+                    Ok(Ok(result)) => {
+                        let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
+                        self.update_proof_view(document, result, max_initial_proof_depth);
+                        break;
+                    },
+                    Ok(Err(_)) => {
+                        self.proof_search_status_view
+                            .status_text
+                            .set_attribute_unchecked("data-proof-search-status", "error");
+                        self.proof_search_status_view
+                            .status_text
+                            .set_text_content(Some("error while searching proof"));
+                        continue;
+                    },
+                    Err(Aborted) => {
+                        break;
+                    }
+                },
+                () = cancel_button_pressed => {
+                    self.proof_search_status_view
+                        .status_text
+                        .set_attribute_unchecked("data-proof-search-status", "cancelled");
+                    self.proof_search_status_view
+                        .status_text
+                        .set_text_content(Some("cancelled"));
+                    break;
+                },
+                () = show_progress_timeout => {
+                    self.proof_view.root.set_text_content(None);
+                    self.proof_search_status_view
+                        .status_text
+                        .set_text_content(Some("in progress..."));
+                }
             }
-            Err(ProofSearchError::WorkerError(_)) => {
-                self.proof_search_status_view
-                    .status_text
-                    .set_attribute_unchecked("data-proof-search-status", "error");
-                self.proof_search_status_view
-                    .status_text
-                    .set_text_content(Some("error while searching proof"));
-            }
-            Err(ProofSearchError::CancelledByUser) => {
-                self.proof_search_status_view
-                    .status_text
-                    .set_attribute_unchecked("data-proof-search-status", "cancelled");
-                self.proof_search_status_view
-                    .status_text
-                    .set_text_content(Some("cancelled"));
-            }
-            Err(ProofSearchError::NewInput) => {}
-        };
+        }
     }
 
-    async fn search_proof(
-        &self,
+    async fn worker_proof_search(
         disequality: TermDisequality,
-        abort_registration: futures::stream::AbortRegistration,
-    ) -> Result<CompletePolynomialProofSearchResult, ProofSearchError> {
-        let worker = ProofSearchWorker::new()
-            .await
-            .map_err(ProofSearchError::WorkerError)?;
-        let proof_search_result =
-            Abortable::new(worker.search_proof(disequality), abort_registration).fuse();
-        pin_mut!(proof_search_result);
-
-        let proof_search_result_or_abort = match future_or_timeout(proof_search_result, 50).await {
-            Timeout::FutureFirst(proof_search_result) => Callback::FutureFirst(proof_search_result),
-            Timeout::TimeoutFirst(proof_search_or_abort) => {
-                self.proof_view.root.set_text_content(None);
-                self.proof_search_status_view
-                    .status_text
-                    .set_text_content(Some("in progress..."));
-
-                future_or_callback(
-                    proof_search_or_abort,
-                    &self.proof_search_status_view.status_text,
-                    "click",
-                )
-                .await
-            }
-        };
-
-        match proof_search_result_or_abort {
-            Callback::FutureFirst(Ok(Ok(result))) => Ok(result),
-            Callback::FutureFirst(Ok(Err(error))) => Err(ProofSearchError::WorkerError(error)),
-            Callback::FutureFirst(Err(Aborted)) => Err(ProofSearchError::NewInput),
-            Callback::CallbackFirst(_) => Err(ProofSearchError::CancelledByUser),
-        }
+    ) -> Result<CompletePolynomialProofSearchResult, Event> {
+        let worker = ProofSearchWorker::new().await?;
+        worker.search_proof(disequality).await
     }
 
     fn update_history(&self, url_parameters: &UrlParameters) {
