@@ -1,6 +1,6 @@
 use std::{cell::RefCell, pin::Pin, rc::Rc, task::Waker};
 
-use futures::{pin_mut, Future};
+use futures::Future;
 use wasm_bindgen::{prelude::Closure, JsCast};
 use web_sys::EventTarget;
 
@@ -68,28 +68,4 @@ impl Future for CallbackFuture<'_> {
 
 pub(crate) async fn callback_async(event_target: &EventTarget, event: &str) {
     CallbackFuture::new(event_target, event).await
-}
-
-pub(crate) enum Callback<F>
-where
-    F: Future,
-{
-    FutureFirst(F::Output),
-    CallbackFirst(F),
-}
-
-pub(crate) async fn future_or_callback<F>(
-    future: F,
-    event_target: &EventTarget,
-    event: &str,
-) -> Callback<F>
-where
-    F: Future + Unpin,
-{
-    let callback_future = callback_async(event_target, event);
-    pin_mut!(callback_future);
-    match futures::future::select(future, callback_future).await {
-        futures::future::Either::Left((result, _)) => Callback::FutureFirst(result),
-        futures::future::Either::Right((_, other)) => Callback::CallbackFirst(other),
-    }
 }
