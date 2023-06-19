@@ -11,6 +11,7 @@ use web_sys::{console, Event, MessageEvent, Worker, WorkerOptions};
 
 use crate::{
     disequality::TermDisequality,
+    log::measure,
     proof_search::CompletePolynomialProofSearchResult,
     ui::SearchProof,
     web_unchecked::{EventTargetUnchecked, WorkerUnchecked},
@@ -52,7 +53,8 @@ impl ProofSearchWorker {
             .try_into()
             .expect("message data should be an Uint8Array");
         let proof_result_buffer: &[u8] = &proof_result_buffer.to_vec();
-        let result = bincode::deserialize(proof_result_buffer).expect("deserialize should work");
+        let result =
+            measure! {bincode::deserialize(proof_result_buffer).expect("deserialize should work")};
         Ok(result)
     }
 }

@@ -18,6 +18,7 @@ use web_sys::{
 use crate::{
     callback::callback_async,
     disequality::{self, PolynomialDisequality},
+    log::measure,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof::CompletePolynomialProof,
     proof_search::CompletePolynomialProofSearchResult,
@@ -437,23 +438,8 @@ impl UIElements {
     async fn worker_proof_search(
         disequality: TermDisequality,
     ) -> Result<CompletePolynomialProofSearchResult, Event> {
-        let performance = window_unchecked().performance().expect("must exist");
-        let start = performance.now();
-        let worker = ProofSearchWorker::new().await?;
-        let worker_startup_end = performance.now();
-        console::log_3(
-            &"worker startup took".into(),
-            &(worker_startup_end - start).into(),
-            &"milliseconds".into(),
-        );
-        let result = worker.search_proof(disequality).await;
-        let search_proof_end = performance.now();
-        console::log_3(
-            &"waiting for worker result took".into(),
-            &(search_proof_end - worker_startup_end).into(),
-            &"milliseconds".into(),
-        );
-        result
+        let worker = measure! { ProofSearchWorker::new().await? };
+        measure! { worker.search_proof(disequality).await }
     }
 
     fn update_history(&self, url_parameters: &UrlParameters) {

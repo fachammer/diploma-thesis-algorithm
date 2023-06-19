@@ -1,5 +1,6 @@
 mod callback;
 mod disequality;
+mod log;
 mod multiset;
 mod polynomial;
 mod proof;
@@ -13,6 +14,7 @@ mod worker;
 use std::{cell::RefCell, rc::Rc};
 
 use js_sys::Uint8Array;
+use log::measure;
 use proof_search::search_complete_proof;
 use ui::SearchProof;
 use wasm_bindgen::{
@@ -54,7 +56,7 @@ pub fn main_worker() {
 
             let SearchProof { disequality } =
                 bincode::deserialize(&encoded_request).expect("deserialize should work");
-            let proof_result = search_complete_proof(&disequality);
+            let proof_result = measure! { search_complete_proof(&disequality) };
 
             let proof_result = bincode::serialize(&proof_result).expect("serialize should work");
             let proof_result_encoded = Uint8Array::from(&proof_result[..]);
