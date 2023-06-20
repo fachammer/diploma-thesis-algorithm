@@ -341,82 +341,129 @@ impl TryFrom<ProofAttempt> for Skeleton {
     type Error = (ProofAttempt, NoProofFoundReason);
 
     fn try_from(value: ProofAttempt) -> Result<Self, Self::Error> {
-        match value {
-            ProofAttempt::NotStrictlyMonomiallyComparable => Err((
-                value,
-                NoProofFoundReason::NotStrictlyMonomiallyComparable {
-                    substitution: Substitution::new(),
-                },
-            )),
-            ProofAttempt::FoundRoot => Err((
-                value,
-                NoProofFoundReason::ExistsRoot {
-                    // TODO: replace this with all zero roots
-                    substitution: Substitution::new(),
-                },
-            )),
-            ProofAttempt::SuccessorNonZero => Ok(Skeleton::SuccessorNonZero),
+        enum ProofAttemptType {
+            NotStrictlyMonomiallyComparable,
+            FoundRoot,
+            SuccessorNonZero,
+            Split { variable: u32 },
+        }
+        let mut parameter_stack = vec![value];
+        let mut operation_stack = vec![];
+        while let Some(value) = parameter_stack.pop() {
+            match value {
+                ProofAttempt::NotStrictlyMonomiallyComparable => {
+                    operation_stack.push(ProofAttemptType::NotStrictlyMonomiallyComparable);
+                }
+                ProofAttempt::FoundRoot => operation_stack.push(ProofAttemptType::FoundRoot),
+                ProofAttempt::SuccessorNonZero => {
+                    operation_stack.push(ProofAttemptType::SuccessorNonZero)
+                }
+                ProofAttempt::Split {
+                    variable,
+                    zero_proof,
+                    successor_proof,
+                } => {
+                    operation_stack.push(ProofAttemptType::Split { variable });
+                    parameter_stack.push(*zero_proof);
+                    parameter_stack.push(*successor_proof);
+                }
+            }
+        }
+
+        let mut return_stack = vec![];
+        while let Some(value) = operation_stack.pop() {
+            let result: Result<Skeleton, (ProofAttempt, NoProofFoundReason)> = match value {
+                ProofAttemptType::NotStrictlyMonomiallyComparable => Err((
+                    ProofAttempt::NotStrictlyMonomiallyComparable,
+                    NoProofFoundReason::NotStrictlyMonomiallyComparable {
+                        substitution: Substitution::new(),
+                    },
+                )),
+                ProofAttemptType::FoundRoot => Err((
+                    ProofAttempt::FoundRoot,
+                    NoProofFoundReason::ExistsRoot {
+                        // TODO: replace this with all zero roots
+                        substitution: Substitution::new(),
+                    },
+                )),
+                ProofAttemptType::SuccessorNonZero => Ok(Skeleton::SuccessorNonZero),
+                ProofAttemptType::Split { variable } => {
+                    let successor_proof_skeleton = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let zero_proof_skeleton = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+
+                    split_skeleton_from_skeleton_results(
+                        variable,
+                        zero_proof_skeleton,
+                        successor_proof_skeleton,
+                    )
+                }
+            };
+            return_stack.push(result);
+        }
+
+        return_stack.pop().expect("return value was put on stack")
+    }
+}
+
+fn split_skeleton_from_skeleton_results(
+    variable: u32,
+    zero_proof_skeleton: Result<Skeleton, (ProofAttempt, NoProofFoundReason)>,
+    successor_proof_skeleton: Result<Skeleton, (ProofAttempt, NoProofFoundReason)>,
+) -> Result<Skeleton, (ProofAttempt, NoProofFoundReason)> {
+    match (zero_proof_skeleton, successor_proof_skeleton) {
+        (Ok(zero_skeleton), Ok(successor_skeleton)) => Ok(Skeleton::Split {
+            variable,
+            zero_skeleton: Box::new(zero_skeleton),
+            successor_skeleton: Box::new(successor_skeleton),
+        }),
+        (Ok(zero_skeleton), Err((successor_attempt, reason))) => Err((
             ProofAttempt::Split {
                 variable,
-                zero_proof,
-                successor_proof,
-            } => match (
-                Self::try_from(*zero_proof),
-                Self::try_from(*successor_proof),
-            ) {
-                (Ok(zero_skeleton), Ok(successor_skeleton)) => Ok(Self::Split {
-                    variable,
-                    zero_skeleton: zero_skeleton.into(),
-                    successor_skeleton: successor_skeleton.into(),
-                }),
-                (Ok(zero_skeleton), Err((successor_attempt, reason))) => Err((
-                    ProofAttempt::Split {
-                        variable,
-                        zero_proof: Box::new(ProofAttempt::from(zero_skeleton)),
-                        successor_proof: Box::new(successor_attempt),
-                    },
-                    reason.with_updated_substitution(|s| {
-                        s.compose(Substitution::from_iter([(
-                            variable,
-                            Term::S(Box::new(Term::Variable(variable))),
-                        )]))
-                    }),
-                )),
-                (Err((zero_attempt, reason)), Ok(successor_skeleton)) => Err((
-                    ProofAttempt::Split {
-                        variable,
-                        zero_proof: Box::new(zero_attempt),
-                        successor_proof: Box::new(ProofAttempt::from(successor_skeleton)),
-                    },
-                    reason.with_updated_substitution(|s| {
-                        s.compose(Substitution::from_iter([(variable, Term::Zero)]))
-                    }),
-                )),
-                (Err((zero_attempt, zero_reason)), Err((sucessor_attempt, successor_reason))) => {
-                    Err((
-                        ProofAttempt::Split {
-                            variable,
-                            zero_proof: Box::new(zero_attempt),
-                            successor_proof: Box::new(sucessor_attempt),
-                        },
-                        match (zero_reason, successor_reason) {
-                            (
-                                NoProofFoundReason::NotStrictlyMonomiallyComparable { .. },
-                                successor_reason @ NoProofFoundReason::ExistsRoot { .. },
-                            ) => successor_reason.with_updated_substitution(|s| {
-                                s.compose(Substitution::from_iter([(
-                                    variable,
-                                    Term::S(Box::new(Term::Variable(variable))),
-                                )]))
-                            }),
-                            (zero_reason, _) => zero_reason.with_updated_substitution(|s| {
-                                s.compose(Substitution::from_iter([(variable, Term::Zero)]))
-                            }),
-                        },
-                    ))
-                }
+                zero_proof: Box::new(ProofAttempt::from(zero_skeleton)),
+                successor_proof: Box::new(successor_attempt),
             },
-        }
+            reason.with_updated_substitution(|s| {
+                s.compose(Substitution::from_iter([(
+                    variable,
+                    Term::S(Box::new(Term::Variable(variable))),
+                )]))
+            }),
+        )),
+        (Err((zero_attempt, reason)), Ok(successor_skeleton)) => Err((
+            ProofAttempt::Split {
+                variable,
+                zero_proof: Box::new(zero_attempt),
+                successor_proof: Box::new(ProofAttempt::from(successor_skeleton)),
+            },
+            reason.with_updated_substitution(|s| {
+                s.compose(Substitution::from_iter([(variable, Term::Zero)]))
+            }),
+        )),
+        (Err((zero_attempt, zero_reason)), Err((sucessor_attempt, successor_reason))) => Err((
+            ProofAttempt::Split {
+                variable,
+                zero_proof: Box::new(zero_attempt),
+                successor_proof: Box::new(sucessor_attempt),
+            },
+            match (zero_reason, successor_reason) {
+                (
+                    NoProofFoundReason::NotStrictlyMonomiallyComparable { .. },
+                    successor_reason @ NoProofFoundReason::ExistsRoot { .. },
+                ) => successor_reason.with_updated_substitution(|s| {
+                    s.compose(Substitution::from_iter([(
+                        variable,
+                        Term::S(Box::new(Term::Variable(variable))),
+                    )]))
+                }),
+                (zero_reason, _) => zero_reason.with_updated_substitution(|s| {
+                    s.compose(Substitution::from_iter([(variable, Term::Zero)]))
+                }),
+            },
+        )),
     }
 }
 
