@@ -314,8 +314,12 @@ impl TryFrom<ProofInProgress> for ProofAttempt {
                 ProofInProgressType::Hole => Err(String::from("proof is incomplete")),
                 ProofInProgressType::SuccessorNonZero => Ok(Self::SuccessorNonZero),
                 ProofInProgressType::Split { variable } => {
-                    let successor_proof = return_stack.pop().expect("must exist");
-                    let zero_proof = return_stack.pop().expect("must exist");
+                    let successor_proof = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let zero_proof = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
                     match (zero_proof, successor_proof) {
                         (Ok(zero_attempt), Ok(successor_attempt)) => Ok(Self::Split {
                             variable,
@@ -329,35 +333,7 @@ impl TryFrom<ProofInProgress> for ProofAttempt {
             return_stack.push(result);
         }
 
-        return_stack.pop().expect("must exist")
-    }
-}
-
-impl ProofAttempt {
-    fn try_from_proof_in_progress_recursively(value: ProofInProgress) -> Result<Self, String> {
-        match value {
-            ProofInProgress::NotStrictlyMonomiallyComparable => {
-                Ok(Self::NotStrictlyMonomiallyComparable)
-            }
-            ProofInProgress::FoundRoot => Ok(Self::FoundRoot),
-            ProofInProgress::Hole { .. } => Err(String::from("proof is incomplete")),
-            ProofInProgress::SuccessorNonZero => Ok(Self::SuccessorNonZero),
-            ProofInProgress::Split {
-                variable,
-                zero_proof,
-                successor_proof,
-            } => match (
-                Self::try_from_proof_in_progress_recursively(*zero_proof),
-                Self::try_from_proof_in_progress_recursively(*successor_proof),
-            ) {
-                (Ok(zero_attempt), Ok(successor_attempt)) => Ok(Self::Split {
-                    variable,
-                    zero_proof: zero_attempt.into(),
-                    successor_proof: successor_attempt.into(),
-                }),
-                _ => Err(String::from("proof is incomplete")),
-            },
-        }
+        return_stack.pop().expect("return value was put on stack")
     }
 }
 
@@ -505,24 +481,34 @@ impl From<Term> for Polynomial {
                 TermType::Variable(v) => Polynomial::from_variable(v),
                 TermType::Zero => Polynomial::from(0),
                 TermType::S => {
-                    let inner = return_stack.pop().expect("must exist");
+                    let inner = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
                     inner + 1
                 }
                 TermType::Add => {
-                    let right = return_stack.pop().expect("must exist");
-                    let left = return_stack.pop().expect("must exist");
+                    let right = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let left = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
                     left + right
                 }
                 TermType::Mul => {
-                    let right = return_stack.pop().expect("must exist");
-                    let left = return_stack.pop().expect("must exist");
+                    let right = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let left = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
                     left * right
                 }
             };
             return_stack.push(result);
         }
 
-        return_stack.pop().expect("must exist")
+        return_stack.pop().expect("return value was put on stack")
     }
 }
 
