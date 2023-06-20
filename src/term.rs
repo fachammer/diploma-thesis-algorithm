@@ -36,19 +36,74 @@ impl Term {
     }
 
     pub(crate) fn substitute(&self, substitution: &Substitution) -> Self {
-        match self {
-            Term::Variable(v) => substitution.get(v).cloned().unwrap_or(Term::Variable(*v)),
-            Term::Zero => Term::Zero,
-            Term::S(t) => Term::S(t.substitute(substitution).into()),
-            Term::Add(t, u) => Term::Add(
-                t.substitute(substitution).into(),
-                u.substitute(substitution).into(),
-            ),
-            Term::Mul(t, u) => Term::Mul(
-                t.substitute(substitution).into(),
-                u.substitute(substitution).into(),
-            ),
+        enum TermType<'a> {
+            Variable(&'a u32),
+            Zero,
+            S,
+            Add,
+            Mul,
         }
+
+        let mut parameter_stack = vec![(self, substitution)];
+        let mut operation_stack = vec![];
+
+        while let Some((term, substitution)) = parameter_stack.pop() {
+            match term {
+                Term::Variable(v) => operation_stack.push(TermType::Variable(v)),
+                Term::Zero => {
+                    operation_stack.push(TermType::Zero);
+                }
+                Term::S(inner) => {
+                    operation_stack.push(TermType::S);
+                    parameter_stack.push((inner, substitution));
+                }
+                Term::Add(left, right) => {
+                    operation_stack.push(TermType::Add);
+                    parameter_stack.push((left, substitution));
+                    parameter_stack.push((right, substitution));
+                }
+                Term::Mul(left, right) => {
+                    operation_stack.push(TermType::Mul);
+                    parameter_stack.push((left, substitution));
+                    parameter_stack.push((right, substitution));
+                }
+            }
+        }
+
+        let mut return_stack = vec![];
+        while let Some(operation) = operation_stack.pop() {
+            let result = match operation {
+                TermType::Variable(v) => substitution.get(v).cloned().unwrap_or(Term::Variable(*v)),
+                TermType::Zero => Term::Zero,
+                TermType::S => {
+                    let inner: Term = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    Term::S(Box::new(inner))
+                }
+                TermType::Add => {
+                    let right = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let left = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    Term::Add(Box::new(left), Box::new(right))
+                }
+                TermType::Mul => {
+                    let right = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let left = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    Term::Mul(Box::new(left), Box::new(right))
+                }
+            };
+            return_stack.push(result);
+        }
+
+        return_stack.pop().expect("result was put on stack")
     }
 
     pub(crate) fn free_varaiables(&self) -> HashSet<u32> {
