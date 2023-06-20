@@ -268,6 +268,73 @@ impl TryFrom<ProofInProgress> for ProofAttempt {
     type Error = String;
 
     fn try_from(value: ProofInProgress) -> Result<Self, Self::Error> {
+        enum ProofInProgressType {
+            NotStrictlyMonomiallyComparable,
+            FoundRoot,
+            Hole,
+            SuccessorNonZero,
+            Split { variable: u32 },
+        }
+        let mut parameter_stack = vec![value];
+        let mut operation_stack = vec![];
+        let mut return_stack: Vec<Result<ProofAttempt, String>> = vec![];
+
+        while let Some(value) = parameter_stack.pop() {
+            match value {
+                ProofInProgress::NotStrictlyMonomiallyComparable => {
+                    operation_stack.push(ProofInProgressType::NotStrictlyMonomiallyComparable);
+                }
+                ProofInProgress::FoundRoot => {
+                    operation_stack.push(ProofInProgressType::FoundRoot);
+                }
+                ProofInProgress::Hole => {
+                    operation_stack.push(ProofInProgressType::Hole);
+                }
+                ProofInProgress::SuccessorNonZero => {
+                    operation_stack.push(ProofInProgressType::SuccessorNonZero);
+                }
+                ProofInProgress::Split {
+                    variable,
+                    zero_proof,
+                    successor_proof,
+                } => {
+                    operation_stack.push(ProofInProgressType::Split { variable });
+                    parameter_stack.push(*zero_proof);
+                    parameter_stack.push(*successor_proof);
+                }
+            };
+        }
+
+        while let Some(value) = operation_stack.pop() {
+            let result = match value {
+                ProofInProgressType::NotStrictlyMonomiallyComparable => {
+                    Ok(Self::NotStrictlyMonomiallyComparable)
+                }
+                ProofInProgressType::FoundRoot => Ok(Self::FoundRoot),
+                ProofInProgressType::Hole => Err(String::from("proof is incomplete")),
+                ProofInProgressType::SuccessorNonZero => Ok(Self::SuccessorNonZero),
+                ProofInProgressType::Split { variable } => {
+                    let successor_proof = return_stack.pop().expect("must exist");
+                    let zero_proof = return_stack.pop().expect("must exist");
+                    match (zero_proof, successor_proof) {
+                        (Ok(zero_attempt), Ok(successor_attempt)) => Ok(Self::Split {
+                            variable,
+                            zero_proof: zero_attempt.into(),
+                            successor_proof: successor_attempt.into(),
+                        }),
+                        _ => Err(String::from("proof is incomplete")),
+                    }
+                }
+            };
+            return_stack.push(result);
+        }
+
+        return_stack.pop().expect("must exist")
+    }
+}
+
+impl ProofAttempt {
+    fn try_from_proof_in_progress_recursively(value: ProofInProgress) -> Result<Self, String> {
         match value {
             ProofInProgress::NotStrictlyMonomiallyComparable => {
                 Ok(Self::NotStrictlyMonomiallyComparable)
@@ -280,8 +347,8 @@ impl TryFrom<ProofInProgress> for ProofAttempt {
                 zero_proof,
                 successor_proof,
             } => match (
-                Self::try_from(*zero_proof),
-                Self::try_from(*successor_proof),
+                Self::try_from_proof_in_progress_recursively(*zero_proof),
+                Self::try_from_proof_in_progress_recursively(*successor_proof),
             ) {
                 (Ok(zero_attempt), Ok(successor_attempt)) => Ok(Self::Split {
                     variable,
@@ -442,13 +509,13 @@ impl From<Term> for Polynomial {
                     inner + 1
                 }
                 TermType::Add => {
-                    let left = return_stack.pop().expect("must exist");
                     let right = return_stack.pop().expect("must exist");
+                    let left = return_stack.pop().expect("must exist");
                     left + right
                 }
                 TermType::Mul => {
-                    let left = return_stack.pop().expect("must exist");
                     let right = return_stack.pop().expect("must exist");
+                    let left = return_stack.pop().expect("must exist");
                     left * right
                 }
             };
