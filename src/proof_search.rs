@@ -396,13 +396,66 @@ impl From<Skeleton> for ProofAttempt {
 
 impl From<Term> for Polynomial {
     fn from(t: Term) -> Self {
-        match t {
-            Term::Variable(v) => Polynomial::from_variable(v),
-            Term::Zero => 0.into(),
-            Term::S(u) => Polynomial::from(*u) + 1,
-            Term::Add(u, v) => Polynomial::from(*u) + Polynomial::from(*v),
-            Term::Mul(u, v) => Polynomial::from(*u) * Polynomial::from(*v),
+        enum TermType {
+            Variable(u32),
+            Zero,
+            S,
+            Add,
+            Mul,
         }
+
+        let mut parameter_stack = vec![t];
+        let mut operation_stack = vec![];
+        let mut return_stack = vec![];
+
+        while let Some(term) = parameter_stack.pop() {
+            match term {
+                Term::Variable(v) => {
+                    operation_stack.push(TermType::Variable(v));
+                }
+                Term::Zero => {
+                    operation_stack.push(TermType::Zero);
+                }
+                Term::S(inner) => {
+                    operation_stack.push(TermType::S);
+                    parameter_stack.push(*inner);
+                }
+                Term::Add(left, right) => {
+                    operation_stack.push(TermType::Add);
+                    parameter_stack.push(*left);
+                    parameter_stack.push(*right);
+                }
+                Term::Mul(left, right) => {
+                    operation_stack.push(TermType::Mul);
+                    parameter_stack.push(*left);
+                    parameter_stack.push(*right);
+                }
+            }
+        }
+
+        while let Some(term) = operation_stack.pop() {
+            let result = match term {
+                TermType::Variable(v) => Polynomial::from_variable(v),
+                TermType::Zero => Polynomial::from(0),
+                TermType::S => {
+                    let inner = return_stack.pop().expect("must exist");
+                    inner + 1
+                }
+                TermType::Add => {
+                    let left = return_stack.pop().expect("must exist");
+                    let right = return_stack.pop().expect("must exist");
+                    left + right
+                }
+                TermType::Mul => {
+                    let left = return_stack.pop().expect("must exist");
+                    let right = return_stack.pop().expect("must exist");
+                    left * right
+                }
+            };
+            return_stack.push(result);
+        }
+
+        return_stack.pop().expect("must exist")
     }
 }
 
@@ -417,15 +470,10 @@ impl From<Monomial> for Term {
 
 impl From<Polynomial> for Term {
     fn from(p: Polynomial) -> Self {
-        let mut summands = vec![];
         let monomials: MultisetHashMap<Monomial> = p.into();
         let mut monomials: Vec<Monomial> = monomials.into_iter().collect();
         monomials.sort_by(|m_1, m_2| m_1.cmp(m_2).reverse());
-        for monomial in monomials {
-            summands.push(monomial.into());
-        }
-
-        Self::sum_of_terms(summands)
+        Self::sum_of_terms(monomials.into_iter().map(Term::from).collect())
     }
 }
 
@@ -519,6 +567,18 @@ mod test {
         let right = Add(Variable(1).into(), Variable(0).into());
 
         search_proof(&TermDisequality::from_terms(left, right));
+    }
+
+    #[test]
+    fn term_to_polynomial_works() {
+        let term = Term::S(
+            Term::Add(
+                Term::Variable(0).into(),
+                Term::Mul(Term::Zero.into(), Term::Variable(1).into()).into(),
+            )
+            .into(),
+        );
+        assert_eq!(Polynomial::from(term), Polynomial::from_variable(0) + 1);
     }
 
     prop_compose! {
