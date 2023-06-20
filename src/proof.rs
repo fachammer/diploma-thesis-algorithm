@@ -38,40 +38,86 @@ pub enum CompletePolynomialProof {
 
 impl From<Proof> for CompletePolynomialProof {
     fn from(proof: Proof) -> Self {
-        match proof.skeleton {
-            Skeleton::SuccessorNonZero => Self::SuccessorNonZero {
-                conclusion: PolynomialDisequality::from(proof.conclusion),
+        enum ProofType {
+            SuccessorNonZero {
+                conclusion: TermDisequality,
             },
-            Skeleton::Split {
-                variable,
-                zero_skeleton,
-                successor_skeleton,
-            } => {
-                let zero_proof = Proof {
-                    skeleton: *zero_skeleton,
-                    conclusion: proof
-                        .conclusion
-                        .substitute(&Substitution::from_iter([(variable, Term::Zero)])),
-                };
+            Split {
+                variable: u32,
+                conclusion: TermDisequality,
+            },
+        }
+        let mut parameter_stack = vec![proof];
+        let mut operation_stack = vec![];
 
-                let successor_proof = Proof {
-                    skeleton: *successor_skeleton,
-                    conclusion: proof.conclusion.substitute(&Substitution::from_iter([(
-                        variable,
-                        Term::S(Term::Variable(variable).into()),
-                    )])),
-                };
-
-                let conclusion = PolynomialDisequality::from(proof.conclusion);
-
-                Self::Split {
+        while let Some(proof) = parameter_stack.pop() {
+            match proof.skeleton {
+                Skeleton::SuccessorNonZero => {
+                    operation_stack.push(ProofType::SuccessorNonZero {
+                        conclusion: proof.conclusion,
+                    });
+                }
+                Skeleton::Split {
                     variable,
-                    conclusion,
-                    zero_proof: Box::new(Self::from(zero_proof)),
-                    successor_proof: Box::new(Self::from(successor_proof)),
+                    zero_skeleton,
+                    successor_skeleton,
+                } => {
+                    let zero_proof = Proof {
+                        skeleton: *zero_skeleton,
+                        conclusion: proof
+                            .conclusion
+                            .substitute(&Substitution::from_iter([(variable, Term::Zero)])),
+                    };
+                    parameter_stack.push(zero_proof);
+
+                    let successor_proof = Proof {
+                        skeleton: *successor_skeleton,
+                        conclusion: proof.conclusion.substitute(&Substitution::from_iter([(
+                            variable,
+                            Term::S(Term::Variable(variable).into()),
+                        )])),
+                    };
+                    parameter_stack.push(successor_proof);
+
+                    operation_stack.push(ProofType::Split {
+                        variable,
+                        conclusion: proof.conclusion,
+                    });
                 }
             }
         }
+
+        let mut return_stack = vec![];
+
+        while let Some(proof) = operation_stack.pop() {
+            let result = match proof {
+                ProofType::SuccessorNonZero { conclusion } => Self::SuccessorNonZero {
+                    conclusion: PolynomialDisequality::from(conclusion),
+                },
+                ProofType::Split {
+                    conclusion,
+                    variable,
+                } => {
+                    let conclusion = PolynomialDisequality::from(conclusion);
+                    let successor_proof = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+                    let zero_proof = return_stack
+                        .pop()
+                        .expect("argument was put on stack in previous iteration");
+
+                    Self::Split {
+                        variable,
+                        conclusion,
+                        zero_proof: Box::new(Self::from(zero_proof)),
+                        successor_proof: Box::new(Self::from(successor_proof)),
+                    }
+                }
+            };
+            return_stack.push(result);
+        }
+
+        return_stack.pop().expect("return value was put on stack")
     }
 }
 
