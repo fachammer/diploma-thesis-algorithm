@@ -109,8 +109,8 @@ impl From<Proof> for CompletePolynomialProof {
                     Self::Split {
                         variable,
                         conclusion,
-                        zero_proof: Box::new(Self::from(zero_proof)),
-                        successor_proof: Box::new(Self::from(successor_proof)),
+                        zero_proof: Box::new(zero_proof),
+                        successor_proof: Box::new(successor_proof),
                     }
                 }
             };
