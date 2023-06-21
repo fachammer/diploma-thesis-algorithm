@@ -12,7 +12,7 @@ use web_sys::{console, Event, MessageEvent, Worker, WorkerOptions};
 use crate::{
     disequality::TermDisequality,
     log::measure,
-    proof_search::CompletePolynomialProofSearchResult,
+    proof_search::ProofSearchResult,
     ui::SearchProof,
     web_unchecked::{EventTargetUnchecked, WorkerUnchecked},
 };
@@ -38,7 +38,7 @@ impl ProofSearchWorker {
     pub(crate) async fn search_proof(
         &self,
         disequality: TermDisequality,
-    ) -> Result<CompletePolynomialProofSearchResult, Event> {
+    ) -> Result<ProofSearchResult, Event> {
         let search_proof_request =
             bincode::serialize(&SearchProof { disequality }).expect("serialize should work");
         let search_proof_request = Uint8Array::from(&search_proof_request[..]);

@@ -4,9 +4,13 @@ const putInCache = async (request, response) => {
 };
 
 const cacheFirst = async ({ request, fallbackUrl }) => {
-  const responseFromCache = await caches.match(request, { ignoreSearch: true });
-  if (responseFromCache) {
-    return responseFromCache;
+  if (false) {
+    const responseFromCache = await caches.match(request, {
+      ignoreSearch: true,
+    });
+    if (responseFromCache) {
+      return responseFromCache;
+    }
   }
 
   try {

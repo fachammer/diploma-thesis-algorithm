@@ -41,9 +41,11 @@ impl NoProofFoundReason {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum ProofSearchResult {
     ProofFound(Proof),
     NoProofFound {
+        conclusion: TermDisequality,
         attempt: ProofAttempt,
         reason: NoProofFoundReason,
     },
@@ -58,7 +60,11 @@ pub fn search_proof(disequality: &TermDisequality) -> ProofSearchResult {
             conclusion: disequality.clone(),
             skeleton,
         }),
-        Err((attempt, reason)) => ProofSearchResult::NoProofFound { attempt, reason },
+        Err((attempt, reason)) => ProofSearchResult::NoProofFound {
+            conclusion: disequality.clone(),
+            attempt,
+            reason,
+        },
     }
 }
 
@@ -76,15 +82,17 @@ pub fn search_complete_proof(disequality: &TermDisequality) -> CompletePolynomia
         ProofSearchResult::ProofFound(proof) => {
             CompletePolynomialProofSearchResult::ProofFound(CompletePolynomialProof::from(proof))
         }
-        ProofSearchResult::NoProofFound { attempt, reason } => {
-            CompletePolynomialProofSearchResult::NoProofFound {
-                attempt: CompletePolynomialProof::from((
-                    attempt,
-                    PolynomialDisequality::from(disequality.clone()),
-                )),
-                reason,
-            }
-        }
+        ProofSearchResult::NoProofFound {
+            conclusion,
+            attempt,
+            reason,
+        } => CompletePolynomialProofSearchResult::NoProofFound {
+            attempt: CompletePolynomialProof::from((
+                attempt,
+                PolynomialDisequality::from(conclusion),
+            )),
+            reason,
+        },
     }
 }
 
@@ -679,6 +687,13 @@ mod test {
             .into(),
         );
         assert_eq!(Polynomial::from(term), Polynomial::from_variable(0) + 1);
+    }
+
+    #[test]
+    fn should_not_result_in_stack_overflow() {
+        let left = "SS0*x*y + S0".parse().unwrap();
+        let right = "SSSSSSSSS0*SSSSSSSSSSSS0*(x + y)".parse().unwrap();
+        search_complete_proof(&TermDisequality { left, right });
     }
 
     prop_compose! {
