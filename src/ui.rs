@@ -7,7 +7,7 @@ use futures::{
     FutureExt,
 };
 use js_sys::encode_uri_component;
-use serde::{Deserialize, Serialize};
+
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -18,7 +18,7 @@ use crate::{
     disequality::{self, PolynomialDisequality},
     log::measure,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
-    proof_search::{ProofAttempt, ProofSearchResult},
+    proof_search::ProofInProgressSearchResult,
     term,
     timeout::timeout,
     web_unchecked::{
@@ -111,11 +111,6 @@ pub(crate) async fn setup() {
     }
 
     update(parameters, worker_abort_handle).await;
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SearchProof {
-    pub(crate) disequality: TermDisequality,
 }
 
 enum ValidationResult {
@@ -287,20 +282,20 @@ impl UIElements {
     fn update_proof_view(
         &self,
         document: &Document,
-        proof_result: ProofSearchResult,
+        proof_result: ProofInProgressSearchResult,
         max_initial_proof_depth: u32,
     ) {
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
         let proof_search_status = &self.proof_search_status_view.status_text;
         match proof_result {
-            ProofSearchResult::ProofFound(proof) => {
+            ProofInProgressSearchResult::ProofFound((conclusion, proof_in_progress)) => {
                 proof_view.append_child_unchecked(
                     &ProofDisplay {
-                        proof: ProofAttempt::from(proof.skeleton),
+                        proof: proof_in_progress,
                         current_depth: 0,
                         max_depth: max_initial_proof_depth,
-                        conclusion: PolynomialDisequality::from(proof.conclusion),
+                        conclusion: PolynomialDisequality::from(conclusion),
                     }
                     .render(document),
                 );
@@ -308,7 +303,7 @@ impl UIElements {
                     .set_attribute_unchecked("data-proof-search-status", "found-proof");
                 proof_search_status.set_text_content(Some("found proof"));
             }
-            ProofSearchResult::NoProofFound {
+            ProofInProgressSearchResult::NoProofFound {
                 conclusion,
                 attempt,
                 reason,
@@ -387,7 +382,7 @@ impl UIElements {
 
         let disequality = TermDisequality::from_terms(left, right);
 
-        let search_proof_result = Self::worker_proof_search(disequality);
+        let search_proof_result = Self::worker_proof_search(disequality, 10);
         let abortable_search_proof_result =
             Abortable::new(search_proof_result, abort_registration).fuse();
         pin_mut!(abortable_search_proof_result);
@@ -440,9 +435,12 @@ impl UIElements {
         }
     }
 
-    async fn worker_proof_search(disequality: TermDisequality) -> Result<ProofSearchResult, Event> {
+    async fn worker_proof_search(
+        disequality: TermDisequality,
+        depth: u32,
+    ) -> Result<ProofInProgressSearchResult, Event> {
         let worker = measure! { ProofSearchWorker::new().await? };
-        measure! { worker.search_proof(disequality).await }
+        measure! { worker.search_proof(disequality, depth).await }
     }
 
     fn update_history(&self, url_parameters: &UrlParameters) {
@@ -520,7 +518,7 @@ pub(crate) mod proof_display {
     use crate::{
         disequality::PolynomialDisequality,
         polynomial::{ExponentDisplayStyle, PolynomialDisplay},
-        proof_search::ProofAttempt,
+        proof_search::ProofInProgress,
         web_unchecked::{
             document_unchecked, DocumentUnchecked, ElementUnchecked, EventTargetUnchecked,
             NodeUnchecked,
@@ -530,7 +528,7 @@ pub(crate) mod proof_display {
     use super::RenderNode;
 
     pub(crate) struct ProofDisplay {
-        pub(crate) proof: ProofAttempt,
+        pub(crate) proof: ProofInProgress,
         pub(crate) current_depth: u32,
         pub(crate) max_depth: u32,
         pub(crate) conclusion: PolynomialDisequality,
@@ -539,18 +537,21 @@ pub(crate) mod proof_display {
     impl RenderNode for ProofDisplay {
         fn render(self, document: &Document) -> Node {
             match self.proof {
-                ProofAttempt::SuccessorNonZero => {
+                ProofInProgress::SuccessorNonZero => {
                     render_proof_leaf(document, &self.conclusion, ProofLeaf::SuccessorNonZero)
                 }
-                ProofAttempt::FoundRoot => {
+                ProofInProgress::FoundRoot => {
                     render_proof_leaf(document, &self.conclusion, ProofLeaf::FoundRoot)
                 }
-                ProofAttempt::NotStrictlyMonomiallyComparable => render_proof_leaf(
+                ProofInProgress::NotStrictlyMonomiallyComparable => render_proof_leaf(
                     document,
                     &self.conclusion,
                     ProofLeaf::NotStrictlyMonomiallyComparable,
                 ),
-                ProofAttempt::Split {
+                ProofInProgress::Hole => {
+                    todo!("handle hole rendering")
+                }
+                ProofInProgress::Split {
                     variable,
                     zero_proof,
                     successor_proof,
