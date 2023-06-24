@@ -286,6 +286,7 @@ pub(crate) fn search_proof_up_to_depth(
 
     for _ in proof_search_iter.take_while(|&d| d <= depth) {}
 
+    // TODO: check whether proof is found or not and get proof reason and return it here
     ProofInProgressSearchResult::ProofFound((disequality.clone(), proof))
 }
 
