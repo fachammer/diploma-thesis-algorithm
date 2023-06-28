@@ -10,11 +10,11 @@ use wasm_bindgen::{prelude::Closure, JsCast, JsValue};
 use web_sys::{console, Event, MessageEvent, Worker, WorkerOptions};
 
 use crate::{
-    disequality::TermDisequality,
+    disequality::PolynomialDisequality,
     log::measure,
-    proof_search::{ProofInProgressSearchResult, ProofStepResult},
+    proof_search::ProofInProgressSearchResult,
     web_unchecked::{EventTargetUnchecked, WorkerUnchecked},
-    SearchProofRequest, SearchProofStepRequest,
+    SearchProofRequest,
 };
 
 pub(crate) struct ProofSearchWorker {
@@ -35,53 +35,14 @@ impl ProofSearchWorker {
 
     pub(crate) async fn search_proof(
         &self,
-        disequality: TermDisequality,
+        disequality: PolynomialDisequality,
         depth: u32,
+        previous_variable: u32,
     ) -> Result<ProofInProgressSearchResult, Event> {
-        let search_proof_request = bincode::serialize(&SearchProofRequest { disequality, depth })
-            .expect("serialize should work");
-        let search_proof_request = Uint8Array::from(&search_proof_request[..]);
-
-        let message = self
-            .worker
-            .post_message_response(&search_proof_request)
-            .await?;
-
-        let proof_result_buffer: Uint8Array = message
-            .data()
-            .try_into()
-            .expect("message data should be an Uint8Array");
-        let proof_result_buffer: &[u8] = &proof_result_buffer.to_vec();
-        let result =
-            measure! {bincode::deserialize(proof_result_buffer).expect("deserialize should work")};
-        Ok(result)
-    }
-}
-
-pub(crate) struct ProofSearchStepWorker {
-    pub(crate) worker: AsyncWorker,
-}
-
-impl ProofSearchStepWorker {
-    pub(crate) async fn new() -> Result<Self, Event> {
-        let mut worker_options = WorkerOptions::new();
-        worker_options.type_(web_sys::WorkerType::Module);
-        let worker =
-            Worker::new_with_options("./worker.js", &worker_options).expect("worker must exist");
-        let worker = AsyncWorker { worker };
-        let message = worker.post_message_response(&"step".into()).await?;
-        assert_eq!(message.data(), "ready");
-        Ok(Self { worker })
-    }
-
-    pub(crate) async fn search_proof_step(
-        &self,
-        disequality: TermDisequality,
-        previous_split_variable: u32,
-    ) -> Result<ProofStepResult, Event> {
-        let search_proof_request = bincode::serialize(&SearchProofStepRequest {
+        let search_proof_request = bincode::serialize(&SearchProofRequest {
             disequality,
-            previous_split_variable,
+            depth,
+            previous_split_variable: previous_variable,
         })
         .expect("serialize should work");
         let search_proof_request = Uint8Array::from(&search_proof_request[..]);

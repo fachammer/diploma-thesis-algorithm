@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-use disequality::TermDisequality;
 use futures::{
     pin_mut, select_biased,
     stream::{AbortHandle, Abortable, Aborted},
@@ -15,7 +14,7 @@ use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEven
 
 use crate::{
     callback::callback_async,
-    disequality::{self, PolynomialDisequality},
+    disequality::PolynomialDisequality,
     log::measure,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
@@ -293,7 +292,8 @@ impl UIElements {
                         proof: proof_in_progress,
                         current_depth: 0,
                         max_depth: max_initial_proof_depth,
-                        conclusion: PolynomialDisequality::from(conclusion),
+                        conclusion,
+                        previous_split_variable: u32::MAX,
                     }
                     .render(document),
                 );
@@ -311,7 +311,8 @@ impl UIElements {
                         proof: attempt,
                         current_depth: 0,
                         max_depth: max_initial_proof_depth,
-                        conclusion: PolynomialDisequality::from(conclusion),
+                        conclusion,
+                        previous_split_variable: u32::MAX,
                     }
                     .render(document),
                 );
@@ -365,8 +366,13 @@ impl UIElements {
             }
         };
 
-        self.polynomial_view.left.set_text_content(None);
         let left_polynomial = Polynomial::from(left.clone());
+        let right_polynomial: Polynomial = Polynomial::from(right.clone());
+        let disequality = PolynomialDisequality::from_polynomials_reduced(
+            left_polynomial.clone(),
+            right_polynomial.clone(),
+        );
+
         self.polynomial_view.left.set_text_content(None);
         self.polynomial_view
             .left
@@ -378,9 +384,7 @@ impl UIElements {
             .right
             .append_child_unchecked(&right_polynomial.render(document));
 
-        let disequality = TermDisequality::from_terms(left, right);
-
-        let search_proof_result = Self::worker_proof_search(disequality, 10);
+        let search_proof_result = worker_proof_search(disequality, 10, u32::MAX);
         let abortable_search_proof_result =
             Abortable::new(search_proof_result, abort_registration).fuse();
         pin_mut!(abortable_search_proof_result);
@@ -433,14 +437,6 @@ impl UIElements {
         }
     }
 
-    async fn worker_proof_search(
-        disequality: TermDisequality,
-        depth: u32,
-    ) -> Result<ProofInProgressSearchResult, Event> {
-        let worker = measure! { ProofSearchWorker::new().await? };
-        measure! { worker.search_proof(disequality, depth).await }
-    }
-
     fn update_history(&self, url_parameters: &UrlParameters) {
         let left_term_input = self.left_term_text();
         let right_term_input = self.right_term_text();
@@ -472,6 +468,15 @@ impl UIElements {
             )
             .expect("push state should not fail");
     }
+}
+
+async fn worker_proof_search(
+    disequality: PolynomialDisequality,
+    depth: u32,
+    previous_variable: u32,
+) -> Result<ProofInProgressSearchResult, Event> {
+    let worker = measure! { ProofSearchWorker::new().await? };
+    measure! { worker.search_proof(disequality, depth, previous_variable).await }
 }
 
 async fn update(parameters: UrlParameters, worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>) {
@@ -511,7 +516,8 @@ pub(crate) mod proof_display {
     use std::fmt::Display;
 
     use wasm_bindgen::{prelude::Closure, JsCast};
-    use web_sys::{Document, Element, Event, Node};
+    use wasm_bindgen_futures::spawn_local;
+    use web_sys::{Document, Element, Event, HtmlElement, Node};
 
     use crate::{
         disequality::PolynomialDisequality,
@@ -523,13 +529,14 @@ pub(crate) mod proof_display {
         },
     };
 
-    use super::RenderNode;
+    use super::{worker_proof_search, RenderNode};
 
     pub(crate) struct ProofDisplay {
         pub(crate) proof: ProofInProgress,
         pub(crate) current_depth: u32,
         pub(crate) max_depth: u32,
         pub(crate) conclusion: PolynomialDisequality,
+        pub(crate) previous_split_variable: u32,
     }
 
     impl RenderNode for ProofDisplay {
@@ -547,7 +554,39 @@ pub(crate) mod proof_display {
                     ProofLeaf::NotStrictlyMonomiallyComparable,
                 ),
                 ProofInProgress::Hole => {
-                    todo!("handle hole rendering")
+                    let node: HtmlElement =
+                        render_proof_leaf(document, &self.conclusion, ProofLeaf::InProgress)
+                            .unchecked_into();
+                    let node_clone = node.clone();
+                    spawn_local(async move {
+                        let document = document_unchecked();
+                        let result =
+                            worker_proof_search(self.conclusion, 5, self.previous_split_variable)
+                                .await
+                                .expect("result must be ok");
+                        match result {
+                            crate::proof_search::ProofInProgressSearchResult::ProofFound((
+                                conclusion,
+                                proof,
+                            )) => {
+                                let zero_result = ProofDisplay {
+                                    proof,
+                                    current_depth: 0,
+                                    max_depth: 0,
+                                    conclusion,
+                                    previous_split_variable: self.previous_split_variable,
+                                };
+                                let proof_node = zero_result.render(&document);
+                                node_clone
+                                    .replace_with_with_node_1(&proof_node)
+                                    .expect("replace with with node should work");
+                            }
+                            crate::proof_search::ProofInProgressSearchResult::NoProofFound {
+                                ..
+                            } => todo!("handle case where no proof is found"),
+                        }
+                    });
+                    node.into()
                 }
                 ProofInProgress::Split {
                     variable,
@@ -615,6 +654,7 @@ pub(crate) mod proof_display {
                             current_depth: self.current_depth + 1,
                             max_depth: self.max_depth,
                             conclusion: self.conclusion.at_variable_zero(variable),
+                            previous_split_variable: variable,
                         }
                         .render(document);
                         let successor_subproof_node = ProofDisplay {
@@ -622,6 +662,7 @@ pub(crate) mod proof_display {
                             current_depth: self.current_depth + 1,
                             max_depth: self.max_depth,
                             conclusion: self.conclusion.into_at_variable_plus_one(variable),
+                            previous_split_variable: variable,
                         }
                         .render(document);
                         let subproofs_node = document.create_div_unchecked();
@@ -657,6 +698,7 @@ pub(crate) mod proof_display {
                                     current_depth: 0,
                                     max_depth: 0,
                                     conclusion: self.conclusion.at_variable_zero(variable),
+                                    previous_split_variable: variable,
                                 }
                                 .render(&document);
                                 let successor_subproof_node = ProofDisplay {
@@ -667,6 +709,7 @@ pub(crate) mod proof_display {
                                         .conclusion
                                         .clone()
                                         .into_at_variable_plus_one(variable),
+                                    previous_split_variable: variable,
                                 }
                                 .render(&document);
                                 let subproofs_node = document.create_div_unchecked();
@@ -703,6 +746,7 @@ pub(crate) mod proof_display {
         SuccessorNonZero,
         FoundRoot,
         NotStrictlyMonomiallyComparable,
+        InProgress,
     }
 
     impl ProofLeaf {
@@ -711,6 +755,7 @@ pub(crate) mod proof_display {
                 ProofLeaf::SuccessorNonZero => "successor-non-zero",
                 ProofLeaf::FoundRoot => "found-root",
                 ProofLeaf::NotStrictlyMonomiallyComparable => "not-strictly-monomially-comparable",
+                ProofLeaf::InProgress => "in-progress",
             })
         }
     }
@@ -722,6 +767,9 @@ pub(crate) mod proof_display {
                 ProofLeaf::FoundRoot => write!(f, "✘"),
                 ProofLeaf::NotStrictlyMonomiallyComparable => {
                     write!(f, "✘")
+                }
+                ProofLeaf::InProgress => {
+                    write!(f, "...")
                 }
             }
         }

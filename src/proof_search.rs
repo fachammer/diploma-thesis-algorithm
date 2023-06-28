@@ -53,9 +53,9 @@ pub(crate) enum ProofSearchResult {
 
 #[derive(Serialize, Deserialize)]
 pub(crate) enum ProofInProgressSearchResult {
-    ProofFound((TermDisequality, ProofInProgress)),
+    ProofFound((PolynomialDisequality, ProofInProgress)),
     NoProofFound {
-        conclusion: TermDisequality,
+        conclusion: PolynomialDisequality,
         attempt: ProofInProgress,
         reason: NoProofFoundReason,
     },
@@ -121,12 +121,13 @@ impl<'a> ProofSearchIterator<'a> {
     fn new(
         disequality: PolynomialDisequality,
         proof: &'a mut ProofInProgress,
+        previous_split_variable: u32,
     ) -> ProofSearchIterator<'a> {
         Self {
             holes: VecDeque::from_iter([ProofHole {
                 hole: proof,
                 disequality,
-                previous_split_variable: u32::MAX,
+                previous_split_variable,
                 depth: 0,
             }]),
         }
@@ -210,7 +211,7 @@ pub(crate) fn search_proof_step(
 
 fn search_proof_as_polynomials(disequality: PolynomialDisequality) -> ProofAttempt {
     let mut proof = ProofInProgress::Hole;
-    let proof_search_iter = ProofSearchIterator::new(disequality, &mut proof);
+    let proof_search_iter = ProofSearchIterator::new(disequality, &mut proof, u32::MAX);
 
     for _ in proof_search_iter {}
 
@@ -277,12 +278,13 @@ impl ProofInProgress {
 }
 
 pub(crate) fn search_proof_up_to_depth(
-    disequality: &TermDisequality,
+    disequality: &PolynomialDisequality,
     depth: u32,
+    previous_split_variable: u32,
 ) -> ProofInProgressSearchResult {
     let mut proof = ProofInProgress::Hole;
     let proof_search_iter =
-        ProofSearchIterator::new(PolynomialDisequality::from(disequality.clone()), &mut proof);
+        ProofSearchIterator::new(disequality.clone(), &mut proof, previous_split_variable);
 
     for _ in proof_search_iter.take_while(|&d| d <= depth) {}
 
