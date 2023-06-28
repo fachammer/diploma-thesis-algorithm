@@ -191,13 +191,11 @@ impl Proof {
                 let successor_disequality = self.conclusion.substitute(&successor_sub);
 
                 let zero_proof = Proof {
-                    // TODO: avoid this clone
                     skeleton: *zero_skeleton.clone(),
                     conclusion: zero_disequality,
                 };
 
                 let successor_proof = Proof {
-                    // TODO: avoid this clone
                     skeleton: *successor_skeleton.clone(),
                     conclusion: successor_disequality,
                 };
@@ -238,7 +236,6 @@ impl<'a> Display for ProofDisplay<'a> {
                 let zero_sub = Substitution::from_iter([(*variable, Term::Zero)]);
                 let zero_conclusion = self.proof.conclusion.substitute(&zero_sub);
                 let zero_proof = &Proof {
-                    // TODO: avoid this clone
                     skeleton: *zero_skeleton.clone(),
                     conclusion: zero_conclusion,
                 };
@@ -258,7 +255,6 @@ impl<'a> Display for ProofDisplay<'a> {
                 )]);
                 let successor_conclusion = self.proof.conclusion.substitute(&successor_sub);
                 let successor_proof = Proof {
-                    // TODO: avoid this clone
                     skeleton: *successor_skeleton.clone(),
                     conclusion: successor_conclusion,
                 };

@@ -84,7 +84,6 @@ pub(crate) async fn setup() {
         ));
     }));
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
-    // TODO: handle this leakage
     left_input_on_change.forget();
 
     let right_input = document.html_element_by_id_unchecked("right-term-input");
@@ -100,7 +99,6 @@ pub(crate) async fn setup() {
         ));
     }));
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
-    // TODO: handle this leakage
     right_input_on_change.forget();
 
     let hide_intro = parameters.hide_intro.unwrap_or(false);
@@ -612,7 +610,6 @@ pub(crate) mod proof_display {
                     let inference_node_clone = inference_node.clone();
 
                     if self.current_depth < self.max_depth {
-                        // TODO: remove this repitition to callback
                         let zero_subproof_node = ProofDisplay {
                             proof: *zero_proof,
                             current_depth: self.current_depth + 1,
@@ -650,7 +647,6 @@ pub(crate) mod proof_display {
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
                         );
-                        // TODO: fix this leakage
                         expand_button_callback.forget();
                     } else {
                         let expand_button_callback = Closure::wrap(Box::new(move |_| {
@@ -694,7 +690,6 @@ pub(crate) mod proof_display {
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
                         );
-                        // TODO: fix this leakage
                         expand_button_callback.forget();
                     }
 
@@ -897,7 +892,6 @@ mod complete_polynomial_proof_display {
                     let inference_node_clone = inference_node.clone();
 
                     if self.current_depth < self.max_depth {
-                        // TODO: remove this repitition to callback
                         let zero_subproof_node = ProofDisplay {
                             proof: *zero_proof,
                             current_depth: self.current_depth + 1,
@@ -933,7 +927,6 @@ mod complete_polynomial_proof_display {
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
                         );
-                        // TODO: fix this leakage
                         expand_button_callback.forget();
                     } else {
                         let expand_button_callback = Closure::wrap(Box::new(move |_| {
@@ -972,7 +965,6 @@ mod complete_polynomial_proof_display {
                             "click",
                             expand_button_callback.as_ref().unchecked_ref(),
                         );
-                        // TODO: fix this leakage
                         expand_button_callback.forget();
                     }
 

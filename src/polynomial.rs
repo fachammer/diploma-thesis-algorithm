@@ -364,7 +364,6 @@ impl Display for Polynomial {
     }
 }
 
-// TODO: extract common formatting options somehow
 pub(crate) struct PolynomialDisplay<'a, 'b, V>
 where
     V: Fn(u32) -> String,
@@ -380,7 +379,6 @@ impl<'a, 'b, V> Display for PolynomialDisplay<'a, 'b, V>
 where
     V: Fn(u32) -> String,
 {
-    // TODO: refactor this function
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut non_zero: Vec<(&Monomial, &u32)> =
             self.polynomial.non_zero_monomials_amount_iter().collect();
