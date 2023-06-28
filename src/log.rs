@@ -5,11 +5,15 @@
 macro_rules! measure {
     ($code:expr) => {{
         let start = crate::log::now();
-
+        web_sys::console::log_3(
+            &"measuring".into(),
+            &stringify!($code).into(),
+            &"...".into(),
+        );
         let result = $code;
 
         let end = crate::log::now();
-        console::log_3(
+        web_sys::console::log_3(
             &(end - start).into(),
             &"milliseconds in".into(),
             &stringify!($code).into(),

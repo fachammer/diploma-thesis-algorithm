@@ -2,4 +2,4 @@
 
 set -ex
 
-wasm-pack build --no-typescript --no-pack --out-dir www/pkg --profiling --target web
+RUST_LOG=info wasm-pack build --no-typescript --no-pack --out-dir www/pkg --profiling --target web

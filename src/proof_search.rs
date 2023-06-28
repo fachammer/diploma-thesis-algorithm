@@ -41,15 +41,27 @@ impl NoProofFoundReason {
     }
 }
 
-pub enum ProofSearchResult {
+#[derive(Serialize, Deserialize)]
+pub(crate) enum ProofSearchResult {
     ProofFound(Proof),
     NoProofFound {
+        conclusion: TermDisequality,
         attempt: ProofAttempt,
         reason: NoProofFoundReason,
     },
 }
 
-pub fn search_proof(disequality: &TermDisequality) -> ProofSearchResult {
+#[derive(Serialize, Deserialize)]
+pub(crate) enum ProofInProgressSearchResult {
+    ProofFound((TermDisequality, ProofInProgress)),
+    NoProofFound {
+        conclusion: TermDisequality,
+        attempt: ProofInProgress,
+        reason: NoProofFoundReason,
+    },
+}
+
+pub(crate) fn search_proof(disequality: &TermDisequality) -> ProofSearchResult {
     let polynomial_disequality = PolynomialDisequality::from(disequality.clone());
 
     let proof_attempt = search_proof_as_polynomials(polynomial_disequality);
@@ -58,7 +70,11 @@ pub fn search_proof(disequality: &TermDisequality) -> ProofSearchResult {
             conclusion: disequality.clone(),
             skeleton,
         }),
-        Err((attempt, reason)) => ProofSearchResult::NoProofFound { attempt, reason },
+        Err((attempt, reason)) => ProofSearchResult::NoProofFound {
+            conclusion: disequality.clone(),
+            attempt,
+            reason,
+        },
     }
 }
 
@@ -76,15 +92,17 @@ pub fn search_complete_proof(disequality: &TermDisequality) -> CompletePolynomia
         ProofSearchResult::ProofFound(proof) => {
             CompletePolynomialProofSearchResult::ProofFound(CompletePolynomialProof::from(proof))
         }
-        ProofSearchResult::NoProofFound { attempt, reason } => {
-            CompletePolynomialProofSearchResult::NoProofFound {
-                attempt: CompletePolynomialProof::from((
-                    attempt,
-                    PolynomialDisequality::from(disequality.clone()),
-                )),
-                reason,
-            }
-        }
+        ProofSearchResult::NoProofFound {
+            conclusion,
+            attempt,
+            reason,
+        } => CompletePolynomialProofSearchResult::NoProofFound {
+            attempt: CompletePolynomialProof::from((
+                attempt,
+                PolynomialDisequality::from(conclusion),
+            )),
+            reason,
+        },
     }
 }
 
@@ -92,6 +110,7 @@ struct ProofHole<'a> {
     hole: &'a mut ProofInProgress,
     disequality: PolynomialDisequality,
     previous_split_variable: u32,
+    depth: u32,
 }
 
 struct ProofSearchIterator<'a> {
@@ -108,19 +127,21 @@ impl<'a> ProofSearchIterator<'a> {
                 hole: proof,
                 disequality,
                 previous_split_variable: u32::MAX,
+                depth: 0,
             }]),
         }
     }
 }
 
 impl<'a> Iterator for ProofSearchIterator<'a> {
-    type Item = ();
+    type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
         let ProofHole {
             hole,
             disequality,
             previous_split_variable,
+            depth,
         } = self.holes.pop_front()?;
 
         match search_proof_step(disequality, previous_split_variable) {
@@ -139,20 +160,23 @@ impl<'a> Iterator for ProofSearchIterator<'a> {
                     hole: zero_proof,
                     disequality: zero_conclusion,
                     previous_split_variable: variable,
+                    depth: depth + 1,
                 });
                 self.holes.push_back(ProofHole {
                     hole: successor_proof,
                     disequality: successor_conclusion,
                     previous_split_variable: variable,
+                    depth: depth + 1,
                 });
             }
         }
 
-        Some(())
+        Some(depth)
     }
 }
 
-enum ProofStepResult {
+#[derive(Serialize, Deserialize)]
+pub(crate) enum ProofStepResult {
     NotStrictlyMonomiallyComparable,
     AllZeroIsRoot,
     SuccessorNonZero,
@@ -163,7 +187,7 @@ enum ProofStepResult {
     },
 }
 
-fn search_proof_step(
+pub(crate) fn search_proof_step(
     disequality: PolynomialDisequality,
     previous_split_variable: u32,
 ) -> ProofStepResult {
@@ -226,7 +250,7 @@ fn fill_hole_with_split_proof(
     (zero_proof, successor_proof)
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub(crate) enum ProofInProgress {
     NotStrictlyMonomiallyComparable,
     FoundRoot,
@@ -250,6 +274,20 @@ impl ProofInProgress {
             _ => None,
         }
     }
+}
+
+pub(crate) fn search_proof_up_to_depth(
+    disequality: &TermDisequality,
+    depth: u32,
+) -> ProofInProgressSearchResult {
+    let mut proof = ProofInProgress::Hole;
+    let proof_search_iter =
+        ProofSearchIterator::new(PolynomialDisequality::from(disequality.clone()), &mut proof);
+
+    for _ in proof_search_iter.take_while(|&d| d <= depth) {}
+
+    // TODO: check whether proof is found or not and get proof reason and return it here
+    ProofInProgressSearchResult::ProofFound((disequality.clone(), proof))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -679,6 +717,13 @@ mod test {
             .into(),
         );
         assert_eq!(Polynomial::from(term), Polynomial::from_variable(0) + 1);
+    }
+
+    #[test]
+    fn should_not_result_in_stack_overflow() {
+        let left = "SS0*x*y + S0".parse().unwrap();
+        let right = "SSSSSSSSS0*SSSSSSSSSSSS0*(x + y)".parse().unwrap();
+        search_complete_proof(&TermDisequality { left, right });
     }
 
     prop_compose! {

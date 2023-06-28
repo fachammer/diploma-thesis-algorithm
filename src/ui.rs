@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use disequality::TermDisequality;
 use futures::{
@@ -7,29 +7,28 @@ use futures::{
     FutureExt,
 };
 use js_sys::encode_uri_component;
-use serde::{Deserialize, Serialize};
+
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{
-    console, Document, Element, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url,
-};
+use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
 
 use crate::{
     callback::callback_async,
     disequality::{self, PolynomialDisequality},
     log::measure,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
-    proof::CompletePolynomialProof,
-    proof_search::CompletePolynomialProofSearchResult,
+    proof_search::ProofInProgressSearchResult,
     term,
     timeout::timeout,
     web_unchecked::{
-        document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked,
-        EventTargetUnchecked, NodeUnchecked, UrlUnchecked,
+        document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
+        UrlUnchecked,
     },
     worker::ProofSearchWorker,
 };
+
+use self::proof_display::ProofDisplay;
 
 #[derive(Clone)]
 struct UrlParameters {
@@ -112,11 +111,6 @@ pub(crate) async fn setup() {
     }
 
     update(parameters, worker_abort_handle).await;
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SearchProof {
-    pub(crate) disequality: TermDisequality,
 }
 
 enum ValidationResult {
@@ -288,19 +282,20 @@ impl UIElements {
     fn update_proof_view(
         &self,
         document: &Document,
-        proof_result: CompletePolynomialProofSearchResult,
+        proof_result: ProofInProgressSearchResult,
         max_initial_proof_depth: u32,
     ) {
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
         let proof_search_status = &self.proof_search_status_view.status_text;
         match proof_result {
-            CompletePolynomialProofSearchResult::ProofFound(proof) => {
+            ProofInProgressSearchResult::ProofFound((conclusion, proof_in_progress)) => {
                 proof_view.append_child_unchecked(
                     &ProofDisplay {
-                        proof,
+                        proof: proof_in_progress,
                         current_depth: 0,
                         max_depth: max_initial_proof_depth,
+                        conclusion: PolynomialDisequality::from(conclusion),
                     }
                     .render(document),
                 );
@@ -308,12 +303,17 @@ impl UIElements {
                     .set_attribute_unchecked("data-proof-search-status", "found-proof");
                 proof_search_status.set_text_content(Some("found proof"));
             }
-            CompletePolynomialProofSearchResult::NoProofFound { attempt, reason } => {
+            ProofInProgressSearchResult::NoProofFound {
+                conclusion,
+                attempt,
+                reason,
+            } => {
                 proof_view.append_child_unchecked(
                     &ProofDisplay {
                         proof: attempt,
                         current_depth: 0,
                         max_depth: max_initial_proof_depth,
+                        conclusion: PolynomialDisequality::from(conclusion),
                     }
                     .render(document),
                 );
@@ -382,7 +382,7 @@ impl UIElements {
 
         let disequality = TermDisequality::from_terms(left, right);
 
-        let search_proof_result = Self::worker_proof_search(disequality);
+        let search_proof_result = Self::worker_proof_search(disequality, 10);
         let abortable_search_proof_result =
             Abortable::new(search_proof_result, abort_registration).fuse();
         pin_mut!(abortable_search_proof_result);
@@ -437,9 +437,10 @@ impl UIElements {
 
     async fn worker_proof_search(
         disequality: TermDisequality,
-    ) -> Result<CompletePolynomialProofSearchResult, Event> {
+        depth: u32,
+    ) -> Result<ProofInProgressSearchResult, Event> {
         let worker = measure! { ProofSearchWorker::new().await? };
-        measure! { worker.search_proof(disequality).await }
+        measure! { worker.search_proof(disequality, depth).await }
     }
 
     fn update_history(&self, url_parameters: &UrlParameters) {
@@ -508,257 +509,566 @@ impl RenderNode for Polynomial {
     }
 }
 
-struct ProofDisplay {
-    proof: CompletePolynomialProof,
-    current_depth: u32,
-    max_depth: u32,
-}
+pub(crate) mod proof_display {
+    use std::fmt::Display;
 
-impl RenderNode for ProofDisplay {
-    fn render(self, document: &Document) -> Node {
-        match self.proof {
-            CompletePolynomialProof::SuccessorNonZero { conclusion } => {
-                render_proof_leaf(document, &conclusion, ProofLeaf::SuccessorNonZero)
-            }
-            CompletePolynomialProof::FoundRoot { conclusion } => {
-                render_proof_leaf(document, &conclusion, ProofLeaf::FoundRoot)
-            }
-            CompletePolynomialProof::NotStrictlyMonomiallyComparable { conclusion } => {
-                render_proof_leaf(
-                    document,
-                    &conclusion,
-                    ProofLeaf::NotStrictlyMonomiallyComparable,
-                )
-            }
-            CompletePolynomialProof::Split {
-                variable,
-                conclusion,
-                zero_proof,
-                successor_proof,
-            } => {
-                let conclusion = conclusion.reduced();
-                let conclusion_text = document
-                    .create_element("span")
-                    .expect("create span should work");
-                conclusion_text.set_inner_html(&format!(
-                    "{} ≠ {}",
-                    PolynomialDisplay {
-                        polynomial: &conclusion.left,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 3,
-                        exponent_display_style: ExponentDisplayStyle::SuperscriptTag
-                    },
-                    PolynomialDisplay {
-                        polynomial: &conclusion.right,
-                        variable_mapping: &|v| String::from(
-                            char::try_from(v).expect("must be a valid char")
-                        ),
-                        number_of_largest_monomials: 1,
-                        number_of_smallest_monomials: 3,
-                        exponent_display_style: ExponentDisplayStyle::SuperscriptTag
-                    },
-                ));
-                let conclusion_node = document.create_div_unchecked();
-                conclusion_node.append_child_unchecked(&conclusion_text);
-                conclusion_node.append_child_unchecked(&create_phantom_height(document));
-                conclusion_node.set_attribute_unchecked("class", "conclusion");
+    use wasm_bindgen::{prelude::Closure, JsCast};
+    use web_sys::{Document, Element, Event, Node};
 
-                let inference_text = document.create_text_node(&format!(
-                    "split on {}",
-                    char::try_from(variable).expect("must be a valid char")
-                ));
-                let inference_tooltip = document.create_div_unchecked();
-                inference_tooltip.set_attribute_unchecked("class", "tooltip");
-                let inference_node = document.create_div_unchecked();
-                inference_node.set_attribute_unchecked("class", "inference");
-                inference_node.set_title("show subproofs");
-                inference_node.append_child_unchecked(&inference_text);
-                inference_node.append_child_unchecked(&inference_tooltip);
+    use crate::{
+        disequality::PolynomialDisequality,
+        polynomial::{ExponentDisplayStyle, PolynomialDisplay},
+        proof_search::ProofInProgress,
+        web_unchecked::{
+            document_unchecked, DocumentUnchecked, ElementUnchecked, EventTargetUnchecked,
+            NodeUnchecked,
+        },
+    };
 
-                let internal_proof_node = document.create_div_unchecked();
-                internal_proof_node.set_attribute_unchecked("class", "proof-node");
-                internal_proof_node.append_child_unchecked(&conclusion_node);
-                internal_proof_node.append_child_unchecked(&inference_node);
+    use super::RenderNode;
 
-                let proof_node = document.create_div_unchecked();
-                proof_node.set_attribute_unchecked("class", "proof");
-                proof_node.set_attribute_unchecked("data-inference-type", "split");
-                proof_node.append_child_unchecked(&internal_proof_node);
+    pub(crate) struct ProofDisplay {
+        pub(crate) proof: ProofInProgress,
+        pub(crate) current_depth: u32,
+        pub(crate) max_depth: u32,
+        pub(crate) conclusion: PolynomialDisequality,
+    }
 
-                let proof_node_clone = proof_node.clone();
-                let inference_node_clone = inference_node.clone();
-
-                if self.current_depth < self.max_depth {
-                    // TODO: remove this repitition to callback
-                    let zero_subproof_node = ProofDisplay {
-                        proof: *zero_proof,
-                        current_depth: self.current_depth + 1,
-                        max_depth: self.max_depth,
-                    }
-                    .render(document);
-                    let successor_subproof_node = ProofDisplay {
-                        proof: *successor_proof,
-                        current_depth: self.current_depth + 1,
-                        max_depth: self.max_depth,
-                    }
-                    .render(document);
-                    let subproofs_node = document.create_div_unchecked();
-                    subproofs_node.set_attribute_unchecked("class", "subproofs");
-                    subproofs_node.append_child_unchecked(&zero_subproof_node);
-                    subproofs_node.append_child_unchecked(&successor_subproof_node);
-                    proof_node.append_child_unchecked(&subproofs_node);
-                    proof_node.set_attribute_unchecked("data-expanded", "");
-                    inference_node.set_title("hide subproofs");
-
-                    let expand_button_callback = Closure::wrap(Box::new(move |_| {
-                        proof_node_clone
-                            .toggle_attribute("data-expanded")
-                            .expect("toggle attribute should work");
-                        if proof_node_clone.has_attribute("data-expanded") {
-                            inference_node_clone.set_title("hide subproofs");
-                        } else {
-                            inference_node_clone.set_title("show subproofs");
-                        }
-                    })
-                        as Box<dyn FnMut(Event)>);
-                    inference_node.add_event_listener_with_callback_unchecked(
-                        "click",
-                        expand_button_callback.as_ref().unchecked_ref(),
-                    );
-                    // TODO: fix this leakage
-                    expand_button_callback.forget();
-                } else {
-                    let expand_button_callback = Closure::wrap(Box::new(move |_| {
-                        if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
-                            let document = document_unchecked();
-                            let zero_subproof_node = ProofDisplay {
-                                proof: *zero_proof.clone(),
-                                current_depth: 0,
-                                max_depth: 0,
-                            }
-                            .render(&document);
-                            let successor_subproof_node = ProofDisplay {
-                                proof: *successor_proof.clone(),
-                                current_depth: 0,
-                                max_depth: 0,
-                            }
-                            .render(&document);
-                            let subproofs_node = document.create_div_unchecked();
-                            subproofs_node.set_attribute_unchecked("class", "subproofs");
-                            subproofs_node.append_child_unchecked(&zero_subproof_node);
-                            subproofs_node.append_child_unchecked(&successor_subproof_node);
-                            proof_node_clone.append_child_unchecked(&subproofs_node);
-                        }
-
-                        proof_node_clone
-                            .toggle_attribute("data-expanded")
-                            .expect("toggle attribute should work");
-                        if proof_node_clone.has_attribute("data-expanded") {
-                            inference_node_clone.set_title("hide subproofs");
-                        } else {
-                            inference_node_clone.set_title("show subproofs");
-                        }
-                    })
-                        as Box<dyn FnMut(Event)>);
-                    inference_node.add_event_listener_with_callback_unchecked(
-                        "click",
-                        expand_button_callback.as_ref().unchecked_ref(),
-                    );
-                    // TODO: fix this leakage
-                    expand_button_callback.forget();
+    impl RenderNode for ProofDisplay {
+        fn render(self, document: &Document) -> Node {
+            match self.proof {
+                ProofInProgress::SuccessorNonZero => {
+                    render_proof_leaf(document, &self.conclusion, ProofLeaf::SuccessorNonZero)
                 }
+                ProofInProgress::FoundRoot => {
+                    render_proof_leaf(document, &self.conclusion, ProofLeaf::FoundRoot)
+                }
+                ProofInProgress::NotStrictlyMonomiallyComparable => render_proof_leaf(
+                    document,
+                    &self.conclusion,
+                    ProofLeaf::NotStrictlyMonomiallyComparable,
+                ),
+                ProofInProgress::Hole => {
+                    todo!("handle hole rendering")
+                }
+                ProofInProgress::Split {
+                    variable,
+                    zero_proof,
+                    successor_proof,
+                } => {
+                    let conclusion = self.conclusion.reduced();
+                    let conclusion_text = document
+                        .create_element("span")
+                        .expect("create span should work");
+                    conclusion_text.set_inner_html(&format!(
+                        "{} ≠ {}",
+                        PolynomialDisplay {
+                            polynomial: &conclusion.left,
+                            variable_mapping: &|v| String::from(
+                                char::try_from(v).expect("must be a valid char")
+                            ),
+                            number_of_largest_monomials: 1,
+                            number_of_smallest_monomials: 3,
+                            exponent_display_style: ExponentDisplayStyle::SuperscriptTag
+                        },
+                        PolynomialDisplay {
+                            polynomial: &conclusion.right,
+                            variable_mapping: &|v| String::from(
+                                char::try_from(v).expect("must be a valid char")
+                            ),
+                            number_of_largest_monomials: 1,
+                            number_of_smallest_monomials: 3,
+                            exponent_display_style: ExponentDisplayStyle::SuperscriptTag
+                        },
+                    ));
+                    let conclusion_node = document.create_div_unchecked();
+                    conclusion_node.append_child_unchecked(&conclusion_text);
+                    conclusion_node.append_child_unchecked(&create_phantom_height(document));
+                    conclusion_node.set_attribute_unchecked("class", "conclusion");
 
-                proof_node.into()
+                    let inference_text = document.create_text_node(&format!(
+                        "split on {}",
+                        char::try_from(variable).expect("must be a valid char")
+                    ));
+                    let inference_tooltip = document.create_div_unchecked();
+                    inference_tooltip.set_attribute_unchecked("class", "tooltip");
+                    let inference_node = document.create_div_unchecked();
+                    inference_node.set_attribute_unchecked("class", "inference");
+                    inference_node.set_title("show subproofs");
+                    inference_node.append_child_unchecked(&inference_text);
+                    inference_node.append_child_unchecked(&inference_tooltip);
+
+                    let internal_proof_node = document.create_div_unchecked();
+                    internal_proof_node.set_attribute_unchecked("class", "proof-node");
+                    internal_proof_node.append_child_unchecked(&conclusion_node);
+                    internal_proof_node.append_child_unchecked(&inference_node);
+
+                    let proof_node = document.create_div_unchecked();
+                    proof_node.set_attribute_unchecked("class", "proof");
+                    proof_node.set_attribute_unchecked("data-inference-type", "split");
+                    proof_node.append_child_unchecked(&internal_proof_node);
+
+                    let proof_node_clone = proof_node.clone();
+                    let inference_node_clone = inference_node.clone();
+
+                    if self.current_depth < self.max_depth {
+                        // TODO: remove this repitition to callback
+                        let zero_subproof_node = ProofDisplay {
+                            proof: *zero_proof,
+                            current_depth: self.current_depth + 1,
+                            max_depth: self.max_depth,
+                            conclusion: self.conclusion.at_variable_zero(variable),
+                        }
+                        .render(document);
+                        let successor_subproof_node = ProofDisplay {
+                            proof: *successor_proof,
+                            current_depth: self.current_depth + 1,
+                            max_depth: self.max_depth,
+                            conclusion: self.conclusion.into_at_variable_plus_one(variable),
+                        }
+                        .render(document);
+                        let subproofs_node = document.create_div_unchecked();
+                        subproofs_node.set_attribute_unchecked("class", "subproofs");
+                        subproofs_node.append_child_unchecked(&zero_subproof_node);
+                        subproofs_node.append_child_unchecked(&successor_subproof_node);
+                        proof_node.append_child_unchecked(&subproofs_node);
+                        proof_node.set_attribute_unchecked("data-expanded", "");
+                        inference_node.set_title("hide subproofs");
+
+                        let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                            proof_node_clone
+                                .toggle_attribute("data-expanded")
+                                .expect("toggle attribute should work");
+                            if proof_node_clone.has_attribute("data-expanded") {
+                                inference_node_clone.set_title("hide subproofs");
+                            } else {
+                                inference_node_clone.set_title("show subproofs");
+                            }
+                        })
+                            as Box<dyn FnMut(Event)>);
+                        inference_node.add_event_listener_with_callback_unchecked(
+                            "click",
+                            expand_button_callback.as_ref().unchecked_ref(),
+                        );
+                        // TODO: fix this leakage
+                        expand_button_callback.forget();
+                    } else {
+                        let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                            if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
+                                let document = document_unchecked();
+                                let zero_subproof_node = ProofDisplay {
+                                    proof: *zero_proof.clone(),
+                                    current_depth: 0,
+                                    max_depth: 0,
+                                    conclusion: self.conclusion.at_variable_zero(variable),
+                                }
+                                .render(&document);
+                                let successor_subproof_node = ProofDisplay {
+                                    proof: *successor_proof.clone(),
+                                    current_depth: 0,
+                                    max_depth: 0,
+                                    conclusion: self
+                                        .conclusion
+                                        .clone()
+                                        .into_at_variable_plus_one(variable),
+                                }
+                                .render(&document);
+                                let subproofs_node = document.create_div_unchecked();
+                                subproofs_node.set_attribute_unchecked("class", "subproofs");
+                                subproofs_node.append_child_unchecked(&zero_subproof_node);
+                                subproofs_node.append_child_unchecked(&successor_subproof_node);
+                                proof_node_clone.append_child_unchecked(&subproofs_node);
+                            }
+
+                            proof_node_clone
+                                .toggle_attribute("data-expanded")
+                                .expect("toggle attribute should work");
+                            if proof_node_clone.has_attribute("data-expanded") {
+                                inference_node_clone.set_title("hide subproofs");
+                            } else {
+                                inference_node_clone.set_title("show subproofs");
+                            }
+                        })
+                            as Box<dyn FnMut(Event)>);
+                        inference_node.add_event_listener_with_callback_unchecked(
+                            "click",
+                            expand_button_callback.as_ref().unchecked_ref(),
+                        );
+                        // TODO: fix this leakage
+                        expand_button_callback.forget();
+                    }
+
+                    proof_node.into()
+                }
             }
         }
     }
-}
 
-enum ProofLeaf {
-    SuccessorNonZero,
-    FoundRoot,
-    NotStrictlyMonomiallyComparable,
-}
-
-impl ProofLeaf {
-    fn inference_type(&self) -> String {
-        String::from(match self {
-            ProofLeaf::SuccessorNonZero => "successor-non-zero",
-            ProofLeaf::FoundRoot => "found-root",
-            ProofLeaf::NotStrictlyMonomiallyComparable => "not-strictly-monomially-comparable",
-        })
+    enum ProofLeaf {
+        SuccessorNonZero,
+        FoundRoot,
+        NotStrictlyMonomiallyComparable,
     }
-}
 
-impl Display for ProofLeaf {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProofLeaf::SuccessorNonZero => write!(f, "✓"),
-            ProofLeaf::FoundRoot => write!(f, "✘"),
-            ProofLeaf::NotStrictlyMonomiallyComparable => {
-                write!(f, "✘")
+    impl ProofLeaf {
+        fn inference_type(&self) -> String {
+            String::from(match self {
+                ProofLeaf::SuccessorNonZero => "successor-non-zero",
+                ProofLeaf::FoundRoot => "found-root",
+                ProofLeaf::NotStrictlyMonomiallyComparable => "not-strictly-monomially-comparable",
+            })
+        }
+    }
+
+    impl Display for ProofLeaf {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ProofLeaf::SuccessorNonZero => write!(f, "✓"),
+                ProofLeaf::FoundRoot => write!(f, "✘"),
+                ProofLeaf::NotStrictlyMonomiallyComparable => {
+                    write!(f, "✘")
+                }
             }
         }
     }
+
+    fn render_proof_leaf(
+        document: &Document,
+        conclusion: &PolynomialDisequality,
+        proof_leaf: ProofLeaf,
+    ) -> Node {
+        let conclusion = conclusion.reduced();
+        let conclusion_text = document
+            .create_element("span")
+            .expect("create span should work");
+        conclusion_text.set_inner_html(&format!(
+            "{} ≠ {}",
+            PolynomialDisplay {
+                polynomial: &conclusion.left,
+                variable_mapping: &|v| String::from(
+                    char::try_from(v).expect("must be a valid char")
+                ),
+                number_of_largest_monomials: 1,
+                number_of_smallest_monomials: 3,
+                exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
+            },
+            PolynomialDisplay {
+                polynomial: &conclusion.right,
+                variable_mapping: &|v| String::from(
+                    char::try_from(v).expect("must be a valid char")
+                ),
+                number_of_largest_monomials: 1,
+                number_of_smallest_monomials: 3,
+                exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
+            },
+        ));
+
+        let conclusion_node = document.create_div_unchecked();
+        conclusion_node.set_attribute_unchecked("class", "conclusion");
+        conclusion_node.append_child_unchecked(&conclusion_text);
+        conclusion_node.append_child_unchecked(&create_phantom_height(document));
+
+        let inference_text = document.create_text_node(&proof_leaf.to_string());
+        let inference_node = document.create_div_unchecked();
+        inference_node.set_attribute_unchecked("class", "inference");
+        inference_node.append_child_unchecked(&inference_text);
+
+        let internal_proof_node = document.create_div_unchecked();
+        internal_proof_node.set_attribute_unchecked("class", "proof-node");
+        internal_proof_node.append_child_unchecked(&conclusion_node);
+        internal_proof_node.append_child_unchecked(&inference_node);
+
+        let proof_node = document.create_div_unchecked();
+        proof_node.set_attribute_unchecked("class", "proof");
+        proof_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
+        proof_node.set_attribute_unchecked("data-expanded", "");
+        proof_node.append_child_unchecked(&internal_proof_node);
+
+        proof_node.into()
+    }
+
+    fn create_phantom_height(document: &Document) -> Element {
+        let phantom_height = document.create_element_unchecked("span");
+        phantom_height.set_attribute_unchecked("class", "phantom-height");
+        phantom_height.set_inner_html("M<sup>M</sup>");
+        phantom_height
+    }
 }
 
-fn render_proof_leaf(
-    document: &Document,
-    conclusion: &PolynomialDisequality,
-    proof_leaf: ProofLeaf,
-) -> Node {
-    let conclusion = conclusion.reduced();
-    let conclusion_text = document
-        .create_element("span")
-        .expect("create span should work");
-    conclusion_text.set_inner_html(&format!(
-        "{} ≠ {}",
-        PolynomialDisplay {
-            polynomial: &conclusion.left,
-            variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
-            number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 3,
-            exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
+mod complete_polynomial_proof_display {
+    use std::fmt::Display;
+
+    use wasm_bindgen::{prelude::Closure, JsCast};
+    use web_sys::{Document, Element, Event, Node};
+
+    use crate::{
+        disequality::PolynomialDisequality,
+        polynomial::{ExponentDisplayStyle, PolynomialDisplay},
+        proof::CompletePolynomialProof,
+        web_unchecked::{
+            document_unchecked, DocumentUnchecked, ElementUnchecked, EventTargetUnchecked,
+            NodeUnchecked,
         },
-        PolynomialDisplay {
-            polynomial: &conclusion.right,
-            variable_mapping: &|v| String::from(char::try_from(v).expect("must be a valid char")),
-            number_of_largest_monomials: 1,
-            number_of_smallest_monomials: 3,
-            exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
-        },
-    ));
+    };
 
-    let conclusion_node = document.create_div_unchecked();
-    conclusion_node.set_attribute_unchecked("class", "conclusion");
-    conclusion_node.append_child_unchecked(&conclusion_text);
-    conclusion_node.append_child_unchecked(&create_phantom_height(document));
+    use super::RenderNode;
 
-    let inference_text = document.create_text_node(&proof_leaf.to_string());
-    let inference_node = document.create_div_unchecked();
-    inference_node.set_attribute_unchecked("class", "inference");
-    inference_node.append_child_unchecked(&inference_text);
+    struct ProofDisplay {
+        proof: CompletePolynomialProof,
+        current_depth: u32,
+        max_depth: u32,
+    }
 
-    let internal_proof_node = document.create_div_unchecked();
-    internal_proof_node.set_attribute_unchecked("class", "proof-node");
-    internal_proof_node.append_child_unchecked(&conclusion_node);
-    internal_proof_node.append_child_unchecked(&inference_node);
+    impl RenderNode for ProofDisplay {
+        fn render(self, document: &Document) -> Node {
+            match self.proof {
+                CompletePolynomialProof::SuccessorNonZero { conclusion } => {
+                    render_proof_leaf(document, &conclusion, ProofLeaf::SuccessorNonZero)
+                }
+                CompletePolynomialProof::FoundRoot { conclusion } => {
+                    render_proof_leaf(document, &conclusion, ProofLeaf::FoundRoot)
+                }
+                CompletePolynomialProof::NotStrictlyMonomiallyComparable { conclusion } => {
+                    render_proof_leaf(
+                        document,
+                        &conclusion,
+                        ProofLeaf::NotStrictlyMonomiallyComparable,
+                    )
+                }
+                CompletePolynomialProof::Split {
+                    variable,
+                    conclusion,
+                    zero_proof,
+                    successor_proof,
+                } => {
+                    let conclusion = conclusion.reduced();
+                    let conclusion_text = document
+                        .create_element("span")
+                        .expect("create span should work");
+                    conclusion_text.set_inner_html(&format!(
+                        "{} ≠ {}",
+                        PolynomialDisplay {
+                            polynomial: &conclusion.left,
+                            variable_mapping: &|v| String::from(
+                                char::try_from(v).expect("must be a valid char")
+                            ),
+                            number_of_largest_monomials: 1,
+                            number_of_smallest_monomials: 3,
+                            exponent_display_style: ExponentDisplayStyle::SuperscriptTag
+                        },
+                        PolynomialDisplay {
+                            polynomial: &conclusion.right,
+                            variable_mapping: &|v| String::from(
+                                char::try_from(v).expect("must be a valid char")
+                            ),
+                            number_of_largest_monomials: 1,
+                            number_of_smallest_monomials: 3,
+                            exponent_display_style: ExponentDisplayStyle::SuperscriptTag
+                        },
+                    ));
+                    let conclusion_node = document.create_div_unchecked();
+                    conclusion_node.append_child_unchecked(&conclusion_text);
+                    conclusion_node.append_child_unchecked(&create_phantom_height(document));
+                    conclusion_node.set_attribute_unchecked("class", "conclusion");
 
-    let proof_node = document.create_div_unchecked();
-    proof_node.set_attribute_unchecked("class", "proof");
-    proof_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
-    proof_node.set_attribute_unchecked("data-expanded", "");
-    proof_node.append_child_unchecked(&internal_proof_node);
+                    let inference_text = document.create_text_node(&format!(
+                        "split on {}",
+                        char::try_from(variable).expect("must be a valid char")
+                    ));
+                    let inference_tooltip = document.create_div_unchecked();
+                    inference_tooltip.set_attribute_unchecked("class", "tooltip");
+                    let inference_node = document.create_div_unchecked();
+                    inference_node.set_attribute_unchecked("class", "inference");
+                    inference_node.set_title("show subproofs");
+                    inference_node.append_child_unchecked(&inference_text);
+                    inference_node.append_child_unchecked(&inference_tooltip);
 
-    proof_node.into()
-}
+                    let internal_proof_node = document.create_div_unchecked();
+                    internal_proof_node.set_attribute_unchecked("class", "proof-node");
+                    internal_proof_node.append_child_unchecked(&conclusion_node);
+                    internal_proof_node.append_child_unchecked(&inference_node);
 
-fn create_phantom_height(document: &Document) -> Element {
-    let phantom_height = document.create_element_unchecked("span");
-    phantom_height.set_attribute_unchecked("class", "phantom-height");
-    phantom_height.set_inner_html("M<sup>M</sup>");
-    phantom_height
+                    let proof_node = document.create_div_unchecked();
+                    proof_node.set_attribute_unchecked("class", "proof");
+                    proof_node.set_attribute_unchecked("data-inference-type", "split");
+                    proof_node.append_child_unchecked(&internal_proof_node);
+
+                    let proof_node_clone = proof_node.clone();
+                    let inference_node_clone = inference_node.clone();
+
+                    if self.current_depth < self.max_depth {
+                        // TODO: remove this repitition to callback
+                        let zero_subproof_node = ProofDisplay {
+                            proof: *zero_proof,
+                            current_depth: self.current_depth + 1,
+                            max_depth: self.max_depth,
+                        }
+                        .render(document);
+                        let successor_subproof_node = ProofDisplay {
+                            proof: *successor_proof,
+                            current_depth: self.current_depth + 1,
+                            max_depth: self.max_depth,
+                        }
+                        .render(document);
+                        let subproofs_node = document.create_div_unchecked();
+                        subproofs_node.set_attribute_unchecked("class", "subproofs");
+                        subproofs_node.append_child_unchecked(&zero_subproof_node);
+                        subproofs_node.append_child_unchecked(&successor_subproof_node);
+                        proof_node.append_child_unchecked(&subproofs_node);
+                        proof_node.set_attribute_unchecked("data-expanded", "");
+                        inference_node.set_title("hide subproofs");
+
+                        let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                            proof_node_clone
+                                .toggle_attribute("data-expanded")
+                                .expect("toggle attribute should work");
+                            if proof_node_clone.has_attribute("data-expanded") {
+                                inference_node_clone.set_title("hide subproofs");
+                            } else {
+                                inference_node_clone.set_title("show subproofs");
+                            }
+                        })
+                            as Box<dyn FnMut(Event)>);
+                        inference_node.add_event_listener_with_callback_unchecked(
+                            "click",
+                            expand_button_callback.as_ref().unchecked_ref(),
+                        );
+                        // TODO: fix this leakage
+                        expand_button_callback.forget();
+                    } else {
+                        let expand_button_callback = Closure::wrap(Box::new(move |_| {
+                            if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
+                                let document = document_unchecked();
+                                let zero_subproof_node = ProofDisplay {
+                                    proof: *zero_proof.clone(),
+                                    current_depth: 0,
+                                    max_depth: 0,
+                                }
+                                .render(&document);
+                                let successor_subproof_node = ProofDisplay {
+                                    proof: *successor_proof.clone(),
+                                    current_depth: 0,
+                                    max_depth: 0,
+                                }
+                                .render(&document);
+                                let subproofs_node = document.create_div_unchecked();
+                                subproofs_node.set_attribute_unchecked("class", "subproofs");
+                                subproofs_node.append_child_unchecked(&zero_subproof_node);
+                                subproofs_node.append_child_unchecked(&successor_subproof_node);
+                                proof_node_clone.append_child_unchecked(&subproofs_node);
+                            }
+
+                            proof_node_clone
+                                .toggle_attribute("data-expanded")
+                                .expect("toggle attribute should work");
+                            if proof_node_clone.has_attribute("data-expanded") {
+                                inference_node_clone.set_title("hide subproofs");
+                            } else {
+                                inference_node_clone.set_title("show subproofs");
+                            }
+                        })
+                            as Box<dyn FnMut(Event)>);
+                        inference_node.add_event_listener_with_callback_unchecked(
+                            "click",
+                            expand_button_callback.as_ref().unchecked_ref(),
+                        );
+                        // TODO: fix this leakage
+                        expand_button_callback.forget();
+                    }
+
+                    proof_node.into()
+                }
+            }
+        }
+    }
+
+    enum ProofLeaf {
+        SuccessorNonZero,
+        FoundRoot,
+        NotStrictlyMonomiallyComparable,
+    }
+
+    impl ProofLeaf {
+        fn inference_type(&self) -> String {
+            String::from(match self {
+                ProofLeaf::SuccessorNonZero => "successor-non-zero",
+                ProofLeaf::FoundRoot => "found-root",
+                ProofLeaf::NotStrictlyMonomiallyComparable => "not-strictly-monomially-comparable",
+            })
+        }
+    }
+
+    impl Display for ProofLeaf {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ProofLeaf::SuccessorNonZero => write!(f, "✓"),
+                ProofLeaf::FoundRoot => write!(f, "✘"),
+                ProofLeaf::NotStrictlyMonomiallyComparable => {
+                    write!(f, "✘")
+                }
+            }
+        }
+    }
+
+    fn render_proof_leaf(
+        document: &Document,
+        conclusion: &PolynomialDisequality,
+        proof_leaf: ProofLeaf,
+    ) -> Node {
+        let conclusion = conclusion.reduced();
+        let conclusion_text = document
+            .create_element("span")
+            .expect("create span should work");
+        conclusion_text.set_inner_html(&format!(
+            "{} ≠ {}",
+            PolynomialDisplay {
+                polynomial: &conclusion.left,
+                variable_mapping: &|v| String::from(
+                    char::try_from(v).expect("must be a valid char")
+                ),
+                number_of_largest_monomials: 1,
+                number_of_smallest_monomials: 3,
+                exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
+            },
+            PolynomialDisplay {
+                polynomial: &conclusion.right,
+                variable_mapping: &|v| String::from(
+                    char::try_from(v).expect("must be a valid char")
+                ),
+                number_of_largest_monomials: 1,
+                number_of_smallest_monomials: 3,
+                exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
+            },
+        ));
+
+        let conclusion_node = document.create_div_unchecked();
+        conclusion_node.set_attribute_unchecked("class", "conclusion");
+        conclusion_node.append_child_unchecked(&conclusion_text);
+        conclusion_node.append_child_unchecked(&create_phantom_height(document));
+
+        let inference_text = document.create_text_node(&proof_leaf.to_string());
+        let inference_node = document.create_div_unchecked();
+        inference_node.set_attribute_unchecked("class", "inference");
+        inference_node.append_child_unchecked(&inference_text);
+
+        let internal_proof_node = document.create_div_unchecked();
+        internal_proof_node.set_attribute_unchecked("class", "proof-node");
+        internal_proof_node.append_child_unchecked(&conclusion_node);
+        internal_proof_node.append_child_unchecked(&inference_node);
+
+        let proof_node = document.create_div_unchecked();
+        proof_node.set_attribute_unchecked("class", "proof");
+        proof_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
+        proof_node.set_attribute_unchecked("data-expanded", "");
+        proof_node.append_child_unchecked(&internal_proof_node);
+
+        proof_node.into()
+    }
+
+    fn create_phantom_height(document: &Document) -> Element {
+        let phantom_height = document.create_element_unchecked("span");
+        phantom_height.set_attribute_unchecked("class", "phantom-height");
+        phantom_height.set_inner_html("M<sup>M</sup>");
+        phantom_height
+    }
 }
