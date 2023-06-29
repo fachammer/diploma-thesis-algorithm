@@ -5,6 +5,7 @@ use std::{
     task::{Poll, Waker},
 };
 
+use futures::future::join_all;
 use js_sys::Uint8Array;
 use wasm_bindgen::{prelude::Closure, JsCast, JsValue};
 use web_sys::{console, Event, MessageEvent, Worker, WorkerOptions};
@@ -25,9 +26,11 @@ pub(crate) struct ProofSearchWorkerPool {
 impl ProofSearchWorkerPool {
     pub(crate) async fn new(size: usize) -> Result<Self, Event> {
         assert!(size > 0);
+        let worker_futures = (0..size).map(|_| ProofSearchWorker::new());
+        let worker_results = join_all(worker_futures).await;
         let mut pool = Vec::with_capacity(size);
-        for _ in 0..size {
-            pool.push(ProofSearchWorker::new().await?);
+        for worker_result in worker_results {
+            pool.push(worker_result?);
         }
 
         Ok(Self {
