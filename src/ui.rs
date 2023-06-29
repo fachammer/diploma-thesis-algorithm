@@ -24,7 +24,7 @@ use crate::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
     },
-    worker::ProofSearchWorker,
+    worker::ProofSearchWorkerPool,
 };
 
 use self::proof_display::ProofDisplay;
@@ -58,6 +58,8 @@ impl UrlParameters {
         }
     }
 }
+
+static mut WORKER_POOL: Option<ProofSearchWorkerPool> = None;
 
 pub(crate) async fn setup() {
     let document = document_unchecked();
@@ -106,6 +108,8 @@ pub(crate) async fn setup() {
             .html_element_by_id_unchecked("introduction")
             .set_attribute_unchecked("hidden", "true");
     }
+
+    unsafe { WORKER_POOL = Some(ProofSearchWorkerPool::new(4).await.expect("must be ok")) };
 
     update(parameters, worker_abort_handle).await;
 }
@@ -475,8 +479,13 @@ async fn worker_proof_search(
     depth: u32,
     previous_variable: u32,
 ) -> Result<ProofInProgressSearchResult, Event> {
-    let worker = measure! { ProofSearchWorker::new().await? };
-    measure! { worker.search_proof(disequality, depth, previous_variable).await }
+    let pool = unsafe { &mut WORKER_POOL };
+    measure! {
+        pool.as_mut()
+            .expect("must be some")
+            .search_proof(disequality, depth, previous_variable)
+            .await
+    }
 }
 
 async fn update(parameters: UrlParameters, worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>) {

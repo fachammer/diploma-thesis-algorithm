@@ -17,6 +17,39 @@ use crate::{
     SearchProofRequest,
 };
 
+pub(crate) struct ProofSearchWorkerPool {
+    pool: Vec<ProofSearchWorker>,
+    next_worker_index: usize,
+}
+
+impl ProofSearchWorkerPool {
+    pub(crate) async fn new(size: usize) -> Result<Self, Event> {
+        assert!(size > 0);
+        let mut pool = Vec::with_capacity(size);
+        for _ in 0..size {
+            pool.push(ProofSearchWorker::new().await?);
+        }
+
+        Ok(Self {
+            pool,
+            next_worker_index: 0,
+        })
+    }
+
+    pub(crate) async fn search_proof(
+        &mut self,
+        disequality: PolynomialDisequality,
+        depth: u32,
+        previous_variable: u32,
+    ) -> Result<ProofInProgressSearchResult, Event> {
+        let worker = &self.pool[self.next_worker_index];
+        self.next_worker_index = (self.next_worker_index + 1) % self.pool.len();
+        worker
+            .search_proof(disequality, depth, previous_variable)
+            .await
+    }
+}
+
 pub(crate) struct ProofSearchWorker {
     pub(crate) worker: AsyncWorker,
 }
@@ -47,10 +80,12 @@ impl ProofSearchWorker {
         .expect("serialize should work");
         let search_proof_request = Uint8Array::from(&search_proof_request[..]);
 
-        let message = self
-            .worker
-            .post_message_response(&search_proof_request)
-            .await?;
+        let message = measure! {
+            self
+                .worker
+                .post_message_response(&search_proof_request)
+                .await?
+        };
 
         let proof_result_buffer: Uint8Array = message
             .data()
