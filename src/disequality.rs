@@ -9,7 +9,7 @@ use crate::{
     term::Term,
 };
 
-#[derive(PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug)]
 pub struct PolynomialDisequality {
     pub(crate) left: Polynomial,
     pub(crate) right: Polynomial,

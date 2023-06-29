@@ -294,10 +294,10 @@ impl UIElements {
         proof_view.set_text_content(None);
         let proof_search_status = &self.proof_search_status_view.status_text;
         match proof_result {
-            ProofInProgressSearchResult::ProofFound((conclusion, proof_in_progress)) => {
+            ProofInProgressSearchResult::ProofFound { conclusion, proof } => {
                 proof_view.append_child_unchecked(
                     &ProofDisplay {
-                        proof: proof_in_progress,
+                        proof,
                         current_depth: 0,
                         max_depth: max_initial_proof_depth,
                         conclusion,
@@ -576,11 +576,16 @@ pub(crate) mod proof_display {
                             .await
                             .expect("result must be ok");
                         match result {
-                            crate::proof_search::ProofInProgressSearchResult::ProofFound((
+                            crate::proof_search::ProofInProgressSearchResult::ProofFound {
                                 conclusion,
                                 proof,
-                            )) => {
-                                let zero_result = ProofDisplay {
+                            }
+                            | crate::proof_search::ProofInProgressSearchResult::NoProofFound {
+                                conclusion,
+                                attempt: proof,
+                                ..
+                            } => {
+                                let proof_display = ProofDisplay {
                                     proof,
                                     current_depth: 0,
                                     max_depth: 0,
@@ -588,14 +593,11 @@ pub(crate) mod proof_display {
                                     previous_split_variable: self.previous_split_variable,
                                     worker_pool: self.worker_pool.clone(),
                                 };
-                                let proof_node = zero_result.render(&document);
+                                let proof_node = proof_display.render(&document);
                                 node_clone
                                     .replace_with_with_node_1(&proof_node)
                                     .expect("replace with with node should work");
                             }
-                            crate::proof_search::ProofInProgressSearchResult::NoProofFound {
-                                ..
-                            } => todo!("handle case where no proof is found"),
                         }
                     });
                     node.into()

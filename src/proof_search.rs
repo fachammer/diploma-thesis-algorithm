@@ -15,14 +15,67 @@ use crate::{
     proof::{Proof, Skeleton},
 };
 
+#[derive(PartialEq, Eq, Debug)]
+pub enum ProvabilityResult {
+    Provable,
+    NotProvable(NoProofFoundReason),
+}
+
+pub fn decide_provability(disequality: &PolynomialDisequality) -> ProvabilityResult {
+    let mut stack = vec![(disequality.clone(), u32::MAX, Substitution::new())];
+
+    while let Some((disequality, previous_split_variable, substitution)) = stack.pop() {
+        match search_proof_step(disequality.clone(), previous_split_variable) {
+            ProofStepResult::NotStrictlyMonomiallyComparable => {
+                return ProvabilityResult::NotProvable(
+                    NoProofFoundReason::NotStrictlyMonomiallyComparable { substitution },
+                )
+            }
+            ProofStepResult::AllZeroIsRoot => {
+                let variables = disequality.variables();
+                let variable_zero_substitution =
+                    Substitution::from_iter(variables.map(|v| (*v, Term::Zero)));
+                let substitution = substitution.compose(variable_zero_substitution);
+                return ProvabilityResult::NotProvable(NoProofFoundReason::ExistsRoot {
+                    substitution,
+                });
+            }
+            ProofStepResult::SuccessorNonZero => {}
+            ProofStepResult::Split {
+                variable,
+                zero_conclusion,
+                successor_conclusion,
+            } => {
+                stack.push((
+                    zero_conclusion,
+                    variable,
+                    substitution
+                        .clone()
+                        .compose(Substitution::from_iter([(variable, Term::Zero)])),
+                ));
+                stack.push((
+                    successor_conclusion,
+                    variable,
+                    substitution.compose(Substitution::from_iter([(
+                        variable,
+                        Term::S(Box::new(Term::Variable(variable))),
+                    )])),
+                ));
+            }
+        }
+    }
+
+    ProvabilityResult::Provable
+}
+
 pub fn is_disequality_provable(disequality: &TermDisequality) -> bool {
     matches!(
-        search_proof(disequality),
-        ProofSearchResult::ProofFound { .. }
+        decide_provability(&PolynomialDisequality::from(disequality.clone())),
+        ProvabilityResult::Provable
     )
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub enum NoProofFoundReason {
     NotStrictlyMonomiallyComparable { substitution: Substitution },
     ExistsRoot { substitution: Substitution },
@@ -53,7 +106,10 @@ pub(crate) enum ProofSearchResult {
 
 #[derive(Serialize, Deserialize)]
 pub(crate) enum ProofInProgressSearchResult {
-    ProofFound((PolynomialDisequality, ProofInProgress)),
+    ProofFound {
+        conclusion: PolynomialDisequality,
+        proof: ProofInProgress,
+    },
     NoProofFound {
         conclusion: PolynomialDisequality,
         attempt: ProofInProgress,
@@ -288,7 +344,17 @@ pub(crate) fn search_proof_up_to_depth(
 
     for _ in proof_search_iter.take_while(|&d| d <= depth) {}
 
-    ProofInProgressSearchResult::ProofFound((disequality.clone(), proof))
+    match decide_provability(disequality) {
+        ProvabilityResult::Provable => ProofInProgressSearchResult::ProofFound {
+            conclusion: disequality.clone(),
+            proof,
+        },
+        ProvabilityResult::NotProvable(reason) => ProofInProgressSearchResult::NoProofFound {
+            conclusion: disequality.clone(),
+            attempt: proof,
+            reason,
+        },
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -637,6 +703,55 @@ mod test {
         assert!(is_disequality_provable(&TermDisequality::from_terms(
             left, right
         )));
+    }
+
+    #[test]
+    fn decide_provability_finds_correct_substitution() {
+        let left = Polynomial::from_variable(0);
+        let right = Polynomial::from(0);
+        assert_eq!(
+            decide_provability(&PolynomialDisequality { left, right }),
+            ProvabilityResult::NotProvable(NoProofFoundReason::ExistsRoot {
+                substitution: Substitution::from_iter([(0, Term::Zero)])
+            })
+        );
+    }
+
+    #[test]
+    fn decide_provability_finds_correct_substitution_for_non_zero_example() {
+        let left = Polynomial::from_variable(0) + Polynomial::from_variable(1);
+        let right = Polynomial::from(1);
+        let disequality = PolynomialDisequality { left, right };
+        let ProvabilityResult::NotProvable(NoProofFoundReason::ExistsRoot{substitution}) = decide_provability(&disequality) else {
+            panic!();
+        };
+
+        let substituted_disequality = TermDisequality::from(disequality).substitute(&substitution);
+
+        assert_eq!(
+            PolynomialDisequality::from(substituted_disequality).reduce(),
+            PolynomialDisequality {
+                left: 0.into(),
+                right: 0.into()
+            }
+        );
+    }
+
+    #[test]
+    fn decide_provability_finds_correct_substitution_for_non_strictly_monomially_comparable_example(
+    ) {
+        let left = 2 * Polynomial::from_variable(0);
+        let right = 2 * Polynomial::from_variable(1) + 1;
+        let disequality = PolynomialDisequality { left, right };
+        let ProvabilityResult::NotProvable(NoProofFoundReason::NotStrictlyMonomiallyComparable{substitution}) = decide_provability(&disequality) else {
+            panic!("result is strictly monomially comparable");
+        };
+
+        let substituted_disequality = TermDisequality::from(disequality).substitute(&substitution);
+
+        assert!(!PolynomialDisequality::from(substituted_disequality)
+            .reduce()
+            .is_strictly_monomially_comparable());
     }
 
     #[test]
