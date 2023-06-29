@@ -10,7 +10,7 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
+use web_sys::{console, Document, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
 
 use crate::{
     callback::callback_async,
@@ -59,8 +59,6 @@ impl UrlParameters {
     }
 }
 
-static mut WORKER_POOL: Option<ProofSearchWorkerPool> = None;
-
 pub(crate) async fn setup() {
     let document = document_unchecked();
     document
@@ -71,6 +69,9 @@ pub(crate) async fn setup() {
     let parameters = UrlParameters::from_url(Url::new_unchecked(&url));
 
     let worker_abort_handle = Rc::new(RefCell::new(None));
+    let worker_pool = Rc::new(RefCell::new(
+        measure! {ProofSearchWorkerPool::new(4).await}.expect("worker pool must be ok"),
+    ));
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
     left_input.set_text_content(Some(
@@ -78,10 +79,12 @@ pub(crate) async fn setup() {
     ));
     let parameters_clone = parameters.clone();
     let worker_abort_handle_clone = worker_abort_handle.clone();
+    let worker_pool_clone = worker_pool.clone();
     let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(move |_| {
         spawn_local(update(
             parameters_clone.clone(),
             worker_abort_handle_clone.clone(),
+            worker_pool_clone.clone(),
         ));
     }));
     left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
@@ -93,10 +96,12 @@ pub(crate) async fn setup() {
     ));
     let parameters_clone = parameters.clone();
     let worker_abort_handle_clone = worker_abort_handle.clone();
+    let worker_pool_clone = worker_pool.clone();
     let right_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(move |_| {
         spawn_local(update(
             parameters_clone.clone(),
             worker_abort_handle_clone.clone(),
+            worker_pool_clone.clone(),
         ));
     }));
     right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
@@ -109,9 +114,7 @@ pub(crate) async fn setup() {
             .set_attribute_unchecked("hidden", "true");
     }
 
-    unsafe { WORKER_POOL = Some(ProofSearchWorkerPool::new(4).await.expect("must be ok")) };
-
-    update(parameters, worker_abort_handle).await;
+    update(parameters, worker_abort_handle, worker_pool).await;
 }
 
 enum ValidationResult {
@@ -285,6 +288,7 @@ impl UIElements {
         document: &Document,
         proof_result: ProofInProgressSearchResult,
         max_initial_proof_depth: u32,
+        worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
     ) {
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
@@ -298,6 +302,7 @@ impl UIElements {
                         max_depth: max_initial_proof_depth,
                         conclusion,
                         previous_split_variable: u32::MAX,
+                        worker_pool,
                     }
                     .render(document),
                 );
@@ -317,6 +322,7 @@ impl UIElements {
                         max_depth: max_initial_proof_depth,
                         conclusion,
                         previous_split_variable: u32::MAX,
+                        worker_pool,
                     }
                     .render(document),
                 );
@@ -343,6 +349,7 @@ impl UIElements {
         document: &Document,
         url_parameters: &UrlParameters,
         worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>,
+        worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
     ) {
         if let Some(handle) = worker_abort_handle.borrow().as_ref() {
             handle.abort();
@@ -388,7 +395,9 @@ impl UIElements {
             .right
             .append_child_unchecked(&right_polynomial.render(document));
 
-        let search_proof_result = worker_proof_search(disequality, 10, u32::MAX);
+        let mut worker_pool_borrow_mut = worker_pool.borrow_mut();
+        let search_proof_result = worker_pool_borrow_mut.search_proof(disequality, 10, u32::MAX);
+
         let abortable_search_proof_result =
             Abortable::new(search_proof_result, abort_registration).fuse();
         pin_mut!(abortable_search_proof_result);
@@ -405,7 +414,7 @@ impl UIElements {
                 result = abortable_search_proof_result => match result {
                     Ok(Ok(result)) => {
                         let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
-                        self.update_proof_view(document, result, max_initial_proof_depth);
+                        self.update_proof_view(document, result, max_initial_proof_depth, worker_pool.clone());
                         break;
                     },
                     Ok(Err(_)) => {
@@ -474,25 +483,15 @@ impl UIElements {
     }
 }
 
-async fn worker_proof_search(
-    disequality: PolynomialDisequality,
-    depth: u32,
-    previous_variable: u32,
-) -> Result<ProofInProgressSearchResult, Event> {
-    let pool = unsafe { &mut WORKER_POOL };
-    measure! {
-        pool.as_mut()
-            .expect("must be some")
-            .search_proof(disequality, depth, previous_variable)
-            .await
-    }
-}
-
-async fn update(parameters: UrlParameters, worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>) {
+async fn update(
+    parameters: UrlParameters,
+    worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>,
+    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+) {
     let document = document_unchecked();
     let ui_elements = UIElements::get_in(&document);
     ui_elements
-        .update(&document, &parameters, worker_abort_handle)
+        .update(&document, &parameters, worker_abort_handle, worker_pool)
         .await;
 }
 
@@ -522,7 +521,7 @@ impl RenderNode for Polynomial {
 }
 
 pub(crate) mod proof_display {
-    use std::fmt::Display;
+    use std::{cell::RefCell, fmt::Display, rc::Rc};
 
     use wasm_bindgen::{prelude::Closure, JsCast};
     use wasm_bindgen_futures::spawn_local;
@@ -536,9 +535,10 @@ pub(crate) mod proof_display {
             document_unchecked, DocumentUnchecked, ElementUnchecked, EventTargetUnchecked,
             NodeUnchecked,
         },
+        worker::ProofSearchWorkerPool,
     };
 
-    use super::{worker_proof_search, RenderNode};
+    use super::RenderNode;
 
     pub(crate) struct ProofDisplay {
         pub(crate) proof: ProofInProgress,
@@ -546,6 +546,7 @@ pub(crate) mod proof_display {
         pub(crate) max_depth: u32,
         pub(crate) conclusion: PolynomialDisequality,
         pub(crate) previous_split_variable: u32,
+        pub(crate) worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
     }
 
     impl RenderNode for ProofDisplay {
@@ -569,10 +570,11 @@ pub(crate) mod proof_display {
                     let node_clone = node.clone();
                     spawn_local(async move {
                         let document = document_unchecked();
-                        let result =
-                            worker_proof_search(self.conclusion, 5, self.previous_split_variable)
-                                .await
-                                .expect("result must be ok");
+                        let mut worker_pool = self.worker_pool.borrow_mut();
+                        let result = worker_pool
+                            .search_proof(self.conclusion, 5, self.previous_split_variable)
+                            .await
+                            .expect("result must be ok");
                         match result {
                             crate::proof_search::ProofInProgressSearchResult::ProofFound((
                                 conclusion,
@@ -584,6 +586,7 @@ pub(crate) mod proof_display {
                                     max_depth: 0,
                                     conclusion,
                                     previous_split_variable: self.previous_split_variable,
+                                    worker_pool: self.worker_pool.clone(),
                                 };
                                 let proof_node = zero_result.render(&document);
                                 node_clone
@@ -664,6 +667,7 @@ pub(crate) mod proof_display {
                             max_depth: self.max_depth,
                             conclusion: self.conclusion.at_variable_zero(variable),
                             previous_split_variable: variable,
+                            worker_pool: self.worker_pool.clone(),
                         }
                         .render(document);
                         let successor_subproof_node = ProofDisplay {
@@ -672,6 +676,7 @@ pub(crate) mod proof_display {
                             max_depth: self.max_depth,
                             conclusion: self.conclusion.into_at_variable_plus_one(variable),
                             previous_split_variable: variable,
+                            worker_pool: self.worker_pool,
                         }
                         .render(document);
                         let subproofs_node = document.create_div_unchecked();
@@ -708,6 +713,7 @@ pub(crate) mod proof_display {
                                     max_depth: 0,
                                     conclusion: self.conclusion.at_variable_zero(variable),
                                     previous_split_variable: variable,
+                                    worker_pool: self.worker_pool.clone(),
                                 }
                                 .render(&document);
                                 let successor_subproof_node = ProofDisplay {
@@ -719,6 +725,7 @@ pub(crate) mod proof_display {
                                         .clone()
                                         .into_at_variable_plus_one(variable),
                                     previous_split_variable: variable,
+                                    worker_pool: self.worker_pool.clone(),
                                 }
                                 .render(&document);
                                 let subproofs_node = document.create_div_unchecked();
