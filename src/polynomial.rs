@@ -289,6 +289,15 @@ impl Polynomial {
             self.0.support().flat_map(|m| m.0.support()).collect();
         unique_variables.into_iter()
     }
+
+    pub(crate) fn pow(self, exponent: u32) -> Polynomial {
+        let mut polynomial = Polynomial::from(1);
+        for _ in 0..exponent {
+            polynomial = polynomial * self.clone();
+        }
+
+        polynomial
+    }
 }
 
 impl From<Polynomial> for MultisetHashMap<Monomial> {
@@ -300,6 +309,12 @@ impl From<Polynomial> for MultisetHashMap<Monomial> {
 impl From<MultisetHashMap<Monomial>> for Polynomial {
     fn from(monomials: MultisetHashMap<Monomial>) -> Self {
         Self(monomials)
+    }
+}
+
+impl From<Monomial> for Polynomial {
+    fn from(value: Monomial) -> Self {
+        Self(MultisetHashMap::from_iter([(value, 1)]))
     }
 }
 
