@@ -284,6 +284,15 @@
         opacity: 1;
         margin-top: 0px;
       }
+
+      #proof-search-status-cancel-button {
+        display: none;
+      }
+
+      #proof-search-status[data-proof-search-status="in-progress"]
+        + #proof-search-status-cancel-button {
+        display: inline;
+      }
     </style>
   </head>
 
@@ -428,7 +437,10 @@
           <span class="label"
             >proof status <span class="phantom-height">≸</span></span
           >
-          <span id="proof-search-status"></span>
+          <span
+            ><span id="proof-search-status"></span>
+            <button id="proof-search-status-cancel-button">cancel</button></span
+          >
           <span></span>
           <span></span>
         </div>

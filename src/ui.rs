@@ -169,6 +169,7 @@ struct PolynomialView {
 
 struct ProofSearchStatusView {
     status_text: HtmlElement,
+    cancel_button: HtmlElement,
 }
 
 struct ProofView {
@@ -205,6 +206,8 @@ impl UIElements {
             },
             proof_search_status_view: ProofSearchStatusView {
                 status_text: document.html_element_by_id_unchecked("proof-search-status"),
+                cancel_button: document
+                    .html_element_by_id_unchecked("proof-search-status-cancel-button"),
             },
             proof_view: ProofView {
                 root: document.html_element_by_id_unchecked("proof-view"),
@@ -410,7 +413,7 @@ impl UIElements {
         pin_mut!(show_progress_timeout);
 
         let cancel_button_pressed =
-            callback_async(&self.proof_search_status_view.status_text, "click").fuse();
+            callback_async(&self.proof_search_status_view.cancel_button, "click").fuse();
         pin_mut!(cancel_button_pressed);
 
         loop {
@@ -448,6 +451,9 @@ impl UIElements {
                 },
                 _ = show_progress_timeout => {
                     self.proof_view.root.set_text_content(None);
+                    self.proof_search_status_view
+                        .status_text
+                        .set_attribute_unchecked("data-proof-search-status", "in-progress");
                     self.proof_search_status_view
                         .status_text
                         .set_text_content(Some("in progress..."));
