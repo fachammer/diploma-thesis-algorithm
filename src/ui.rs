@@ -15,7 +15,7 @@ use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEven
 use crate::{
     callback::callback_async,
     disequality::PolynomialDisequality,
-    log::measure,
+    log::{measure, now},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
     term,
@@ -171,6 +171,7 @@ struct ProofSearchStatusView {
     root: HtmlElement,
     status_text: HtmlElement,
     cancel_button: HtmlElement,
+    runtime_text: HtmlElement,
 }
 
 struct ProofView {
@@ -189,6 +190,19 @@ struct UIElements {
     proof_search_status_view: ProofSearchStatusView,
     proof_view: ProofView,
     validation_messages: ValidationMessagesView,
+}
+
+fn format_duration(duration_in_millis: f64) -> String {
+    assert!(duration_in_millis >= 0.0);
+    match duration_in_millis {
+        d if (0.0..1_000.0).contains(&d) => format!("{d:.1} ms"),
+        d if (1_000.0..(60.0 * 1_000.0)).contains(&d) => format!("{:.2} s", d / 1000.0),
+        d => {
+            let minutes = (d / (60.0 * 1_000.0)).floor();
+            let remaining_seconds = (d - minutes * (60.0 * 1_000.0)) / 1_000.0;
+            format!("{}m {}s", minutes as u32, remaining_seconds as u32)
+        }
+    }
 }
 
 impl UIElements {
@@ -210,6 +224,7 @@ impl UIElements {
                 status_text: document.html_element_by_id_unchecked("proof-search-status-text"),
                 cancel_button: document
                     .html_element_by_id_unchecked("proof-search-status-cancel-button"),
+                runtime_text: document.html_element_by_id_unchecked("proof-search-status-runtime"),
             },
             proof_view: ProofView {
                 root: document.html_element_by_id_unchecked("proof-view"),
@@ -357,11 +372,13 @@ impl UIElements {
         worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>,
         worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
     ) {
-        if let Some(handle) = worker_abort_handle.borrow().as_ref() {
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        let previous_abort_handle = worker_abort_handle
+            .borrow_mut()
+            .replace(abort_handle.clone());
+        if let Some(handle) = previous_abort_handle {
             handle.abort();
         }
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        let _ = worker_abort_handle.borrow_mut().insert(abort_handle);
 
         self.update_history(url_parameters);
         let validation_result = self.validate();
@@ -419,12 +436,20 @@ impl UIElements {
             callback_async(&self.proof_search_status_view.cancel_button, "click").fuse();
         pin_mut!(cancel_button_pressed);
 
+        let proof_search_start_time = now();
         loop {
             select_biased! {
                 result = abortable_search_proof_result => match result {
                     Ok(Ok(result)) => {
                         let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
                         self.update_proof_view(document, result, max_initial_proof_depth, worker_pool.clone());
+                        let proof_search_duration = now() - proof_search_start_time;
+                        let duration_text = format_duration(proof_search_duration);
+                        self.proof_search_status_view
+                            .runtime_text
+                            .set_text_content(Some(&format!(
+                                "proof search ran for {duration_text}"
+                            )));
                         break;
                     },
                     Ok(Err(_)) => {
@@ -434,6 +459,13 @@ impl UIElements {
                         self.proof_search_status_view
                             .status_text
                             .set_text_content(Some("error while searching proof"));
+                        let proof_search_duration = now() - proof_search_start_time;
+                        let duration_text = format_duration(proof_search_duration);
+                        self.proof_search_status_view
+                            .runtime_text
+                            .set_text_content(Some(&format!(
+                                "proof search ran for {duration_text}"
+                            )));
                         break;
                     },
                     Err(Aborted) => {
@@ -447,10 +479,17 @@ impl UIElements {
                     self.proof_search_status_view
                         .status_text
                         .set_text_content(Some("cancelled"));
+                    let proof_search_duration = now() - proof_search_start_time;
+                    let duration_text = format_duration(proof_search_duration);
+                    self.proof_search_status_view
+                        .runtime_text
+                        .set_text_content(Some(&format!(
+                            "proof search ran for {duration_text}"
+                        )));
                     if let Some(handle) = worker_abort_handle.borrow().as_ref() {
                         handle.abort();
                     }
-                    continue;
+                    break;
                 },
                 _ = show_progress_timeout => {
                     self.proof_view.root.set_text_content(None);
@@ -460,6 +499,17 @@ impl UIElements {
                     self.proof_search_status_view
                         .status_text
                         .set_text_content(Some("in progress..."));
+                    continue;
+                }
+                _ = timeout(8).fuse() => {
+                    // when worker is aborted, we do not want to update the time anymore
+                    if abort_handle.is_aborted() {
+                        break;
+                    }
+
+                    let proof_search_duration = now() - proof_search_start_time;
+                    let duration_text = format_duration(proof_search_duration);
+                    self.proof_search_status_view.runtime_text.set_text_content(Some(&format!("proof search is running for {duration_text}")));
                     continue;
                 }
             }
