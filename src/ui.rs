@@ -10,7 +10,7 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{console, Document, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
+use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
 
 use crate::{
     callback::callback_async,
@@ -24,7 +24,7 @@ use crate::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
     },
-    worker::ProofSearchWorkerPool,
+    worker::{ProofSearchWorker, ProofSearchWorkerPool},
 };
 
 use self::proof_display::ProofDisplay;
@@ -70,7 +70,7 @@ pub(crate) async fn setup() {
 
     let worker_abort_handle = Rc::new(RefCell::new(None));
     let worker_pool = Rc::new(RefCell::new(
-        measure! {ProofSearchWorkerPool::new(4).await}.expect("worker pool must be ok"),
+        measure! {ProofSearchWorkerPool::new(2).await}.expect("worker pool must be ok"),
     ));
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
@@ -395,8 +395,8 @@ impl UIElements {
             .right
             .append_child_unchecked(&right_polynomial.render(document));
 
-        let mut worker_pool_borrow_mut = worker_pool.borrow_mut();
-        let search_proof_result = worker_pool_borrow_mut.search_proof(disequality, 10, u32::MAX);
+        let search_proof_result =
+            search_proof_up_to_depth(worker_pool.clone(), disequality, 10, u32::MAX);
 
         let abortable_search_proof_result =
             Abortable::new(search_proof_result, abort_registration).fuse();
@@ -520,6 +520,24 @@ impl RenderNode for Polynomial {
     }
 }
 
+async fn search_proof_up_to_depth(
+    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+    disequality: PolynomialDisequality,
+    depth: u32,
+    previous_split_variable: u32,
+) -> Result<ProofInProgressSearchResult, Event> {
+    let worker = worker_pool.borrow_mut().pop_worker();
+    let worker = match worker {
+        Some(worker) => worker,
+        None => ProofSearchWorker::new().await?,
+    };
+    let result = worker
+        .search_proof(disequality, depth, previous_split_variable)
+        .await;
+    worker_pool.borrow_mut().push_worker(worker);
+    result
+}
+
 pub(crate) mod proof_display {
     use std::{cell::RefCell, fmt::Display, rc::Rc};
 
@@ -538,7 +556,7 @@ pub(crate) mod proof_display {
         worker::ProofSearchWorkerPool,
     };
 
-    use super::RenderNode;
+    use super::{search_proof_up_to_depth, RenderNode};
 
     pub(crate) struct ProofDisplay {
         pub(crate) proof: ProofInProgress,
@@ -570,11 +588,15 @@ pub(crate) mod proof_display {
                     let node_clone = node.clone();
                     spawn_local(async move {
                         let document = document_unchecked();
-                        let mut worker_pool = self.worker_pool.borrow_mut();
-                        let result = worker_pool
-                            .search_proof(self.conclusion, 5, self.previous_split_variable)
-                            .await
-                            .expect("result must be ok");
+                        let result = search_proof_up_to_depth(
+                            self.worker_pool.clone(),
+                            self.conclusion,
+                            5,
+                            self.previous_split_variable,
+                        )
+                        .await
+                        .expect("result must be ok");
+
                         match result {
                             crate::proof_search::ProofInProgressSearchResult::ProofFound {
                                 conclusion,

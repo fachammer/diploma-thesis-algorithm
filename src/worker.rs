@@ -20,7 +20,6 @@ use crate::{
 
 pub(crate) struct ProofSearchWorkerPool {
     pool: Vec<ProofSearchWorker>,
-    next_worker_index: usize,
 }
 
 impl ProofSearchWorkerPool {
@@ -33,23 +32,15 @@ impl ProofSearchWorkerPool {
             pool.push(worker_result?);
         }
 
-        Ok(Self {
-            pool,
-            next_worker_index: 0,
-        })
+        Ok(Self { pool })
     }
 
-    pub(crate) async fn search_proof(
-        &mut self,
-        disequality: PolynomialDisequality,
-        depth: u32,
-        previous_variable: u32,
-    ) -> Result<ProofInProgressSearchResult, Event> {
-        let worker = &self.pool[self.next_worker_index];
-        self.next_worker_index = (self.next_worker_index + 1) % self.pool.len();
-        worker
-            .search_proof(disequality, depth, previous_variable)
-            .await
+    pub(crate) fn pop_worker(&mut self) -> Option<ProofSearchWorker> {
+        self.pool.pop()
+    }
+
+    pub(crate) fn push_worker(&mut self, worker: ProofSearchWorker) {
+        self.pool.push(worker)
     }
 }
 
