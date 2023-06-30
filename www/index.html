@@ -128,7 +128,7 @@
       #left-polynomial,
       #right-polynomial,
       .disequality-sign,
-      #proof-search-status {
+      #proof-search-status-text {
         align-self: baseline;
       }
 
@@ -290,7 +290,7 @@
       }
 
       #proof-search-status[data-proof-search-status="in-progress"]
-        + #proof-search-status-cancel-button {
+        > #proof-search-status-cancel-button {
         display: inline;
       }
     </style>
@@ -437,10 +437,11 @@
           <span class="label"
             >proof status <span class="phantom-height">≸</span></span
           >
-          <span
-            ><span id="proof-search-status"></span>
-            <button id="proof-search-status-cancel-button">cancel</button></span
-          >
+          <span id="proof-search-status"
+            ><span id="proof-search-status-text"></span>
+            <button id="proof-search-status-cancel-button">cancel</button>
+            <span id="proof-search-runtime"></span
+          ></span>
           <span></span>
           <span></span>
         </div>

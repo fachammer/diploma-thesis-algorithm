@@ -168,6 +168,7 @@ struct PolynomialView {
 }
 
 struct ProofSearchStatusView {
+    root: HtmlElement,
     status_text: HtmlElement,
     cancel_button: HtmlElement,
 }
@@ -205,7 +206,8 @@ impl UIElements {
                 right: document.html_element_by_id_unchecked("right-polynomial"),
             },
             proof_search_status_view: ProofSearchStatusView {
-                status_text: document.html_element_by_id_unchecked("proof-search-status"),
+                root: document.html_element_by_id_unchecked("proof-search-status"),
+                status_text: document.html_element_by_id_unchecked("proof-search-status-text"),
                 cancel_button: document
                     .html_element_by_id_unchecked("proof-search-status-cancel-button"),
             },
@@ -295,7 +297,8 @@ impl UIElements {
     ) {
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
-        let proof_search_status = &self.proof_search_status_view.status_text;
+        let proof_search_status = &self.proof_search_status_view.root;
+        let proof_search_status_text = &self.proof_search_status_view.status_text;
         match proof_result {
             ProofInProgressSearchResult::ProofFound { conclusion, proof } => {
                 proof_view.append_child_unchecked(
@@ -311,7 +314,7 @@ impl UIElements {
                 );
                 proof_search_status
                     .set_attribute_unchecked("data-proof-search-status", "found-proof");
-                proof_search_status.set_text_content(Some("found proof"));
+                proof_search_status_text.set_text_content(Some("found proof"));
             }
             ProofInProgressSearchResult::NoProofFound {
                 conclusion,
@@ -342,7 +345,7 @@ impl UIElements {
                 };
                 proof_search_status
                     .set_attribute_unchecked("data-proof-search-status", reason_attribute_value);
-                proof_search_status.set_text_content(Some(reason_text));
+                proof_search_status_text.set_text_content(Some(reason_text));
             }
         }
     }
@@ -426,7 +429,7 @@ impl UIElements {
                     },
                     Ok(Err(_)) => {
                         self.proof_search_status_view
-                            .status_text
+                            .root
                             .set_attribute_unchecked("data-proof-search-status", "error");
                         self.proof_search_status_view
                             .status_text
@@ -439,7 +442,7 @@ impl UIElements {
                 },
                 _ = cancel_button_pressed => {
                     self.proof_search_status_view
-                        .status_text
+                        .root
                         .set_attribute_unchecked("data-proof-search-status", "cancelled");
                     self.proof_search_status_view
                         .status_text
@@ -452,7 +455,7 @@ impl UIElements {
                 _ = show_progress_timeout => {
                     self.proof_view.root.set_text_content(None);
                     self.proof_search_status_view
-                        .status_text
+                        .root
                         .set_attribute_unchecked("data-proof-search-status", "in-progress");
                     self.proof_search_status_view
                         .status_text
