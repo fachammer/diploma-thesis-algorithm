@@ -1,8 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, mem, rc::Rc};
 
 use futures::{
     pin_mut, select_biased,
-    stream::{AbortHandle, Abortable, Aborted},
+    stream::{AbortHandle, AbortRegistration, Abortable, Aborted},
     FutureExt,
 };
 use js_sys::encode_uri_component;
@@ -70,7 +70,7 @@ pub(crate) async fn setup() {
 
     let worker_abort_handle = Rc::new(RefCell::new(None));
     let worker_pool = Rc::new(RefCell::new(
-        measure! {ProofSearchWorkerPool::new(2).await}.expect("worker pool must be ok"),
+        measure! {ProofSearchWorkerPool::new(4).await}.expect("worker pool must be ok"),
     ));
 
     let left_input = document.html_element_by_id_unchecked("left-term-input");
@@ -395,11 +395,15 @@ impl UIElements {
             .right
             .append_child_unchecked(&right_polynomial.render(document));
 
-        let search_proof_result =
-            search_proof_up_to_depth(worker_pool.clone(), disequality, 10, u32::MAX);
+        let abortable_search_proof_result = search_proof_up_to_depth_abortable(
+            worker_pool.clone(),
+            disequality,
+            10,
+            u32::MAX,
+            abort_registration,
+        )
+        .fuse();
 
-        let abortable_search_proof_result =
-            Abortable::new(search_proof_result, abort_registration).fuse();
         pin_mut!(abortable_search_proof_result);
 
         let show_progress_timeout = timeout(50).fuse();
@@ -437,7 +441,10 @@ impl UIElements {
                     self.proof_search_status_view
                         .status_text
                         .set_text_content(Some("cancelled"));
-                    break;
+                    if let Some(handle) = worker_abort_handle.borrow().as_ref() {
+                        handle.abort();
+                    }
+                    continue;
                 },
                 _ = show_progress_timeout => {
                     self.proof_view.root.set_text_content(None);
@@ -520,27 +527,54 @@ impl RenderNode for Polynomial {
     }
 }
 
-async fn search_proof_up_to_depth(
+async fn search_proof_up_to_depth_abortable(
     worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
     disequality: PolynomialDisequality,
     depth: u32,
     previous_split_variable: u32,
-) -> Result<ProofInProgressSearchResult, Event> {
+    abort_registration: AbortRegistration,
+) -> Result<Result<ProofInProgressSearchResult, Event>, Aborted> {
     let worker = worker_pool.borrow_mut().pop_worker();
     let worker = match worker {
         Some(worker) => worker,
-        None => ProofSearchWorker::new().await?,
+        None => match ProofSearchWorker::new().await {
+            Ok(worker) => worker,
+            Err(error) => return Ok(Err(error)),
+        },
     };
-    let result = worker
-        .search_proof(disequality, depth, previous_split_variable)
-        .await;
-    worker_pool.borrow_mut().push_worker(worker);
+
+    let abortable_task = Abortable::new(
+        worker.search_proof(disequality, depth, previous_split_variable),
+        abort_registration,
+    );
+
+    let result = abortable_task.await;
+    match result {
+        Ok(Ok(_)) => {
+            // if worker succeeds, reuse it by giving it back to the pool
+            worker_pool.borrow_mut().push_worker(worker);
+        }
+        Err(Aborted) | Ok(Err(_)) => {
+            // if worker errored or was aborted, we cannot reuse it since it most likely encountered
+            // an out of memory error or is long-running
+            // therefore we drop the worker and put a new worker in its place
+            mem::drop(worker);
+            if let Ok(new_worker) = ProofSearchWorker::new().await {
+                worker_pool.borrow_mut().push_worker(new_worker);
+            }
+            // if we cannot create a worker right now,
+            // we try again when searching for a proof the next time
+            // however, creating a worker most likely won't fail
+        }
+    }
+
     result
 }
 
 pub(crate) mod proof_display {
     use std::{cell::RefCell, fmt::Display, rc::Rc};
 
+    use futures::stream::AbortHandle;
     use wasm_bindgen::{prelude::Closure, JsCast};
     use wasm_bindgen_futures::spawn_local;
     use web_sys::{Document, Element, Event, HtmlElement, Node};
@@ -556,7 +590,7 @@ pub(crate) mod proof_display {
         worker::ProofSearchWorkerPool,
     };
 
-    use super::{search_proof_up_to_depth, RenderNode};
+    use super::{search_proof_up_to_depth_abortable, RenderNode};
 
     pub(crate) struct ProofDisplay {
         pub(crate) proof: ProofInProgress,
@@ -588,14 +622,17 @@ pub(crate) mod proof_display {
                     let node_clone = node.clone();
                     spawn_local(async move {
                         let document = document_unchecked();
-                        let result = search_proof_up_to_depth(
+                        let (_, abort_registration) = AbortHandle::new_pair();
+                        let result = search_proof_up_to_depth_abortable(
                             self.worker_pool.clone(),
                             self.conclusion,
                             5,
                             self.previous_split_variable,
+                            abort_registration,
                         )
                         .await
-                        .expect("result must be ok");
+                        .expect("result must be ok")
+                        .expect("is not aborted");
 
                         match result {
                             crate::proof_search::ProofInProgressSearchResult::ProofFound {
