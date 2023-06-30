@@ -893,6 +893,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "this is long-running so only run it when explicitly stated"]
     fn stress_test() {
         let left: Term = "SS0*x*y + S0".parse().unwrap();
         let right: Term = "SS0*SS0*SS0*SS0*SS0*SS0*SS0*SS0*SS0*SS0*SS0*SS0*SS0*(x + y)"
