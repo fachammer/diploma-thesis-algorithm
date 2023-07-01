@@ -1,7 +1,7 @@
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{
-    window, Document, Element, EventTarget, HtmlElement, HtmlInputElement, Node, Url, Window,
-    Worker,
+    window, Document, Element, EventTarget, HtmlElement, HtmlInputElement, HtmlTemplateElement,
+    Node, Url, Window, Worker,
 };
 
 pub(crate) trait NodeUnchecked {
@@ -16,12 +16,19 @@ impl NodeUnchecked for Node {
 
 pub(crate) trait ElementUnchecked {
     fn set_attribute_unchecked(&self, name: &str, value: &str);
+    fn query_selector_unchecked(&self, selectors: &str) -> Element;
 }
 
 impl ElementUnchecked for Element {
     fn set_attribute_unchecked(&self, name: &str, value: &str) {
         self.set_attribute(name, value)
             .expect("set attribute must succeed");
+    }
+
+    fn query_selector_unchecked(&self, selectors: &str) -> Element {
+        self.query_selector(selectors)
+            .expect("query_selector should work")
+            .expect("element should exist")
     }
 }
 
@@ -32,6 +39,15 @@ pub(crate) trait DocumentUnchecked {
 
     fn input_by_id_unchecked(&self, id: &str) -> HtmlInputElement {
         self.html_element_by_id_unchecked(id).unchecked_into()
+    }
+
+    fn template_by_id_unchecked(&self, id: &str) -> HtmlTemplateElement {
+        self.html_element_by_id_unchecked(id).unchecked_into()
+    }
+
+    fn clone_template_by_id_unchecked(&self, id: &str) -> Element {
+        self.template_by_id_unchecked(id)
+            .deep_clone_template_as_element_unchecked()
     }
 
     fn create_div_unchecked(&self) -> HtmlElement {
@@ -127,5 +143,18 @@ impl EventTargetUnchecked for EventTarget {
     ) {
         self.remove_event_listener_with_callback(type_, listener)
             .expect("remove event listener should succeed")
+    }
+}
+
+pub(crate) trait HtmlTemplateElementUnchecked {
+    fn deep_clone_template_as_element_unchecked(&self) -> Element;
+}
+
+impl HtmlTemplateElementUnchecked for HtmlTemplateElement {
+    fn deep_clone_template_as_element_unchecked(&self) -> Element {
+        self.content()
+            .clone_node_with_deep(true)
+            .expect("clone_node_with_deep should work")
+            .unchecked_into()
     }
 }

@@ -10,10 +10,7 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{
-    console, Document, Element, Event, HtmlElement, HtmlInputElement, HtmlTemplateElement,
-    InputEvent, Node, Url,
-};
+use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
 
 use crate::{
     disequality::PolynomialDisequality,
@@ -182,9 +179,9 @@ mod proof_search_status {
         stream::{AbortHandle, Abortable},
         Future, FutureExt,
     };
-    use wasm_bindgen::JsCast;
+
     use wasm_bindgen_futures::spawn_local;
-    use web_sys::{Document, Element, HtmlTemplateElement};
+    use web_sys::{Document, Element};
 
     use crate::{
         callback::callback_async,
@@ -202,28 +199,15 @@ mod proof_search_status {
     impl InProgress {
         pub(crate) fn new_in(
             document: &Document,
-            root: Element,
+            parent: Element,
         ) -> (InProgress, impl Future<Output = Cancelled>) {
-            let template: HtmlTemplateElement = document
-                .html_element_by_id_unchecked("proof-search-in-progress-status-view")
-                .unchecked_into();
-            let node: Element = template
-                .content()
-                .clone_node_with_deep(true)
-                .expect("clone_node_with_deep should work")
-                .unchecked_into();
-
-            let (abort_handle, abort_registration) = AbortHandle::new_pair();
-            let cancel_button = node
-                .query_selector("#cancel-button")
-                .expect("query selector should work")
-                .expect("cancel button must exist");
-            let duration_text_element = node
-                .query_selector("#duration-text")
-                .expect("query selector should work")
-                .expect("duration text must exist");
+            let root =
+                document.clone_template_by_id_unchecked("proof-search-in-progress-status-view");
+            let cancel_button = root.query_selector_unchecked("#cancel-button");
+            let duration_text_element = root.query_selector_unchecked("#duration-text");
             let start_time = now();
 
+            let (abort_handle, abort_registration) = AbortHandle::new_pair();
             let abort_handle_clone = abort_handle.clone();
             let cancelled = async move {
                 callback_async(&cancel_button, "click").await;
@@ -236,15 +220,15 @@ mod proof_search_status {
                     Abortable::new(std::future::pending::<Never>(), abort_registration).fuse();
                 pin_mut!(abort_message);
 
-                root.set_attribute_unchecked("data-proof-search-status", "in-progress");
+                parent.set_attribute_unchecked("data-proof-search-status", "in-progress");
 
                 select_biased! {
                     _ = abort_message => return,
                     _ = timeout(15).fuse() => {}
                 }
 
-                root.set_text_content(None);
-                root.append_child_unchecked(&node);
+                parent.set_text_content(None);
+                parent.append_child_unchecked(&root);
 
                 loop {
                     let duration = now() - start_time;
@@ -494,23 +478,14 @@ impl UIElements {
                 self.proof_search_status_view
                     .root
                     .set_attribute_unchecked("data-proof-search-status", "found-proof");
-                let template: HtmlTemplateElement = document
-                    .html_element_by_id_unchecked("proof-search-successful-status-view")
-                    .unchecked_into();
-                let node: Element = template
-                    .content()
-                    .clone_node_with_deep(true)
-                    .expect("clone_node_with_deep should work")
-                    .unchecked_into();
-                let duration_text = node
-                    .query_selector("#duration-text")
-                    .expect("query_selector should work")
-                    .expect("duration-text should exist");
+                let root =
+                    document.clone_template_by_id_unchecked("proof-search-successful-status-view");
+                let duration_text = root.query_selector_unchecked("#duration-text");
                 duration_text.set_text_content(Some(&formatted_duration));
                 self.proof_search_status_view.root.set_text_content(None);
                 self.proof_search_status_view
                     .root
-                    .append_child_unchecked(&node);
+                    .append_child_unchecked(&root);
             }
             ProofInProgressSearchResult::NoProofFound {
                 conclusion,
@@ -536,49 +511,27 @@ impl UIElements {
                             "data-proof-search-status",
                             "not-strictly-monomially-comparable",
                         );
-                        let template: HtmlTemplateElement = document
-                            .html_element_by_id_unchecked(
-                                "proof-search-unsuccessful-not-strictly-monomially-comparable-status-view",
-                            )
-                            .unchecked_into();
-                        let node: Element = template
-                            .content()
-                            .clone_node_with_deep(true)
-                            .expect("clone_node_with_deep should work")
-                            .unchecked_into();
-                        let duration_text = node
-                            .query_selector("#duration-text")
-                            .expect("query_selector should work")
-                            .expect("duration-text should exist");
+                        let root = document.clone_template_by_id_unchecked("proof-search-unsuccessful-not-strictly-monomially-comparable-status-view");
+                        let duration_text = root.query_selector_unchecked("#duration-text");
                         duration_text.set_text_content(Some(&formatted_duration));
                         self.proof_search_status_view.root.set_text_content(None);
                         self.proof_search_status_view
                             .root
-                            .append_child_unchecked(&node);
+                            .append_child_unchecked(&root);
                     }
                     crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => {
                         self.proof_search_status_view
                             .root
                             .set_attribute_unchecked("data-proof-search-status", "found-root");
-                        let template: HtmlTemplateElement = document
-                            .html_element_by_id_unchecked(
-                                "proof-search-unsuccessful-found-root-status-view",
-                            )
-                            .unchecked_into();
-                        let node: Element = template
-                            .content()
-                            .clone_node_with_deep(true)
-                            .expect("clone_node_with_deep should work")
-                            .unchecked_into();
-                        let duration_text = node
-                            .query_selector("#duration-text")
-                            .expect("query_selector should work")
-                            .expect("duration-text should exist");
+                        let root = document.clone_template_by_id_unchecked(
+                            "proof-search-unsuccessful-found-root-status-view",
+                        );
+                        let duration_text = root.query_selector_unchecked("#duration-text");
                         duration_text.set_text_content(Some(&formatted_duration));
                         self.proof_search_status_view.root.set_text_content(None);
                         self.proof_search_status_view
                             .root
-                            .append_child_unchecked(&node);
+                            .append_child_unchecked(&root);
                     }
                 };
             }
@@ -670,26 +623,15 @@ impl UIElements {
                     Ok(Err(_)) => {
                         let errored = in_progress.error();
                         let formatted_duration = format_duration(errored.duration());
-                        let template: HtmlTemplateElement = document
-                            .html_element_by_id_unchecked(
-                                "proof-search-errored-status-view",
-                            )
-                            .unchecked_into();
-                        let node: Element = template
-                            .content()
-                            .clone_node_with_deep(true)
-                            .expect("clone_node_with_deep should work")
-                            .unchecked_into();
-                        let duration_text = node
-                            .query_selector("#duration-text")
-                            .expect("query_selector should work")
-                            .expect("duration-text should exist");
+                        let root = document
+                            .clone_template_by_id_unchecked("proof-search-errored-status-view");
+                        let duration_text = root.query_selector_unchecked("#duration-text");
                         duration_text.set_text_content(Some(&formatted_duration));
                         self.proof_search_status_view
                             .root
                             .set_attribute_unchecked("data-proof-search-status", "errored");
                         self.proof_search_status_view.root.set_text_content(None);
-                        self.proof_search_status_view.root.append_child_unchecked(&node);
+                        self.proof_search_status_view.root.append_child_unchecked(&root);
                         break;
                     },
                     Err(Aborted) => {
@@ -700,26 +642,16 @@ impl UIElements {
                 cancelled = cancelled => {
                     abort_handle.abort();
                     let formatted_duration = format_duration(cancelled.duration());
-                    let template: HtmlTemplateElement = document
-                        .html_element_by_id_unchecked(
-                            "proof-search-cancelled-status-view",
-                        )
-                        .unchecked_into();
-                    let node: Element = template
-                            .content()
-                            .clone_node_with_deep(true)
-                            .expect("clone_node_with_deep should work")
-                            .unchecked_into();
-                    let duration_text = node
-                        .query_selector("#duration-text")
-                        .expect("query_selector should work")
-                        .expect("duration-text should exist");
+                    let root = document
+                        .clone_template_by_id_unchecked("proof-search-cancelled-status-view");
+                    let duration_text = root
+                        .query_selector_unchecked("#duration-text");
                     duration_text.set_text_content(Some(&formatted_duration));
                     self.proof_search_status_view
                         .root
                         .set_attribute_unchecked("data-proof-search-status", "cancelled");
                     self.proof_search_status_view.root.set_text_content(None);
-                    self.proof_search_status_view.root.append_child_unchecked(&node);
+                    self.proof_search_status_view.root.append_child_unchecked(&root);
                     break;
                 },
                 _ = show_progress_timeout => {
