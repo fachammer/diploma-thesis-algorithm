@@ -617,6 +617,7 @@ async fn search_proof_up_to_depth_abortable(
             worker_pool.borrow_mut().push_worker(worker);
         }
         Err(Aborted) | Ok(Err(_)) => {
+            spawn_local(async move {
                 // if worker errored or was aborted, we cannot reuse it since it most likely encountered
                 // an out of memory error or is long-running
                 // therefore we drop the worker and put a new worker in its place
@@ -627,6 +628,7 @@ async fn search_proof_up_to_depth_abortable(
                 // if we cannot create a worker right now,
                 // we try again when searching for a proof the next time
                 // however, creating a worker most likely won't fail
+            });
         }
     }
 
