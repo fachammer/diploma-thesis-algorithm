@@ -17,7 +17,6 @@ impl NodeUnchecked for Node {
 pub(crate) trait ElementUnchecked {
     fn set_attribute_unchecked(&self, name: &str, value: &str);
     fn query_selector_unchecked(&self, selectors: &str) -> Element;
-    fn replace_children_unchecked(&self, child: &Node);
 }
 
 impl ElementUnchecked for Element {
@@ -30,11 +29,6 @@ impl ElementUnchecked for Element {
         self.query_selector(selectors)
             .expect("query_selector should work")
             .expect("element should exist")
-    }
-
-    fn replace_children_unchecked(&self, child: &Node) {
-        self.set_text_content(None);
-        self.append_child_unchecked(child);
     }
 }
 

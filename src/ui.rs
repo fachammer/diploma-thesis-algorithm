@@ -189,7 +189,7 @@ impl ProofSearchStatusView {
             pin_mut!(abort_message);
 
             parent.set_attribute_unchecked("data-proof-search-status", "in-progress");
-            parent.replace_children_unchecked(&root);
+            parent.replace_children_with_node_1(&root);
 
             loop {
                 let duration = now() - start_time;
@@ -215,7 +215,7 @@ impl ProofSearchStatusView {
         let root = document.clone_template_by_id_unchecked("proof-search-errored-status-view");
         let duration_text = root.query_selector_unchecked("#duration-text");
         duration_text.set_text_content(Some(&formatted_duration));
-        self.root.replace_children_unchecked(&root);
+        self.root.replace_children_with_node_1(&root);
     }
 
     fn set_cancelled(&self, document: &Document, proof_search_duration: f64) {
@@ -225,7 +225,7 @@ impl ProofSearchStatusView {
         duration_text.set_text_content(Some(&formatted_duration));
         self.root
             .set_attribute_unchecked("data-proof-search-status", "cancelled");
-        self.root.replace_children_unchecked(&root);
+        self.root.replace_children_with_node_1(&root);
     }
 
     fn set_found_root(&self, duration: f64, document: &Document) {
@@ -236,7 +236,7 @@ impl ProofSearchStatusView {
             .clone_template_by_id_unchecked("proof-search-unsuccessful-found-root-status-view");
         let duration_text = root.query_selector_unchecked("#duration-text");
         duration_text.set_text_content(Some(&formatted_duration));
-        self.root.replace_children_unchecked(&root);
+        self.root.replace_children_with_node_1(&root);
     }
 
     fn set_not_strictly_monomially_comparable(&self, duration: &f64, document: &Document) {
@@ -250,7 +250,7 @@ impl ProofSearchStatusView {
         );
         let duration_text = root.query_selector_unchecked("#duration-text");
         duration_text.set_text_content(Some(&formatted_duration));
-        self.root.replace_children_unchecked(&root);
+        self.root.replace_children_with_node_1(&root);
     }
 
     fn set_found_proof(&self, document: &Document, duration: f64) {
@@ -260,7 +260,7 @@ impl ProofSearchStatusView {
         let root = document.clone_template_by_id_unchecked("proof-search-successful-status-view");
         let duration_text = root.query_selector_unchecked("#duration-text");
         duration_text.set_text_content(Some(&formatted_duration));
-        self.root.replace_children_unchecked(&root);
+        self.root.replace_children_with_node_1(&root);
     }
 }
 
@@ -519,12 +519,10 @@ impl UIElements {
 
         self.polynomial_view
             .left
-            .replace_children_unchecked(&left_polynomial.render(document));
-
-        let right_polynomial: Polynomial = Polynomial::from(right.clone());
+            .replace_children_with_node_1(&left_polynomial.render(document));
         self.polynomial_view
             .right
-            .replace_children_unchecked(&right_polynomial.render(document));
+            .replace_children_with_node_1(&right_polynomial.render(document));
 
         let proof_search_start_time = now();
         let abortable_search_proof_result = search_proof_up_to_depth_abortable(
