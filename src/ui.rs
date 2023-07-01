@@ -172,6 +172,7 @@ struct PolynomialView {
 
 struct ProofSearchStatusView {
     root: HtmlElement,
+    parent: HtmlElement,
 }
 
 mod proof_search_status {
@@ -385,6 +386,7 @@ impl UIElements {
                 right: document.html_element_by_id_unchecked("right-polynomial"),
             },
             proof_search_status_view: ProofSearchStatusView {
+                parent: document.html_element_by_id_unchecked("proof-search-status-view"),
                 root: document.html_element_by_id_unchecked("proof-search-status"),
             },
             proof_view: ProofView {
@@ -427,7 +429,7 @@ impl UIElements {
             .right_term
             .set_attribute_unchecked("data-valid", "true");
         self.proof_search_status_view
-            .root
+            .parent
             .set_attribute_unchecked("data-visible", "true");
         self.polynomial_view
             .root
@@ -457,7 +459,7 @@ impl UIElements {
             .root
             .set_attribute_unchecked("data-visible", "false");
         self.proof_search_status_view
-            .root
+            .parent
             .set_attribute_unchecked("data-visible", "false");
         self.proof_view
             .root
