@@ -429,7 +429,8 @@ impl UIElements {
 
         pin_mut!(abortable_search_proof_result);
 
-        let show_progress_timeout = timeout(50).fuse();
+        let millis_until_progress_is_shown = 100;
+        let show_progress_timeout = timeout(millis_until_progress_is_shown).fuse();
         pin_mut!(show_progress_timeout);
 
         let cancel_button_pressed =
@@ -437,6 +438,7 @@ impl UIElements {
         pin_mut!(cancel_button_pressed);
 
         let proof_search_start_time = now();
+        let mut runtime_update_interval = millis_until_progress_is_shown * 2;
         loop {
             select_biased! {
                 result = abortable_search_proof_result => match result {
@@ -499,9 +501,10 @@ impl UIElements {
                     self.proof_search_status_view
                         .status_text
                         .set_text_content(Some("in progress..."));
+                    runtime_update_interval = 8;
                     continue;
                 }
-                _ = timeout(8).fuse() => {
+                _ = timeout(runtime_update_interval).fuse() => {
                     // when worker is aborted, we do not want to update the time anymore
                     if abort_handle.is_aborted() {
                         break;
@@ -614,16 +617,16 @@ async fn search_proof_up_to_depth_abortable(
             worker_pool.borrow_mut().push_worker(worker);
         }
         Err(Aborted) | Ok(Err(_)) => {
-            // if worker errored or was aborted, we cannot reuse it since it most likely encountered
-            // an out of memory error or is long-running
-            // therefore we drop the worker and put a new worker in its place
-            mem::drop(worker);
-            if let Ok(new_worker) = ProofSearchWorker::new().await {
-                worker_pool.borrow_mut().push_worker(new_worker);
-            }
-            // if we cannot create a worker right now,
-            // we try again when searching for a proof the next time
-            // however, creating a worker most likely won't fail
+                // if worker errored or was aborted, we cannot reuse it since it most likely encountered
+                // an out of memory error or is long-running
+                // therefore we drop the worker and put a new worker in its place
+                mem::drop(worker);
+                if let Ok(new_worker) = ProofSearchWorker::new().await {
+                    worker_pool.borrow_mut().push_worker(new_worker);
+                }
+                // if we cannot create a worker right now,
+                // we try again when searching for a proof the next time
+                // however, creating a worker most likely won't fail
         }
     }
 
