@@ -10,16 +10,19 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
+use web_sys::{
+    console, Document, Element, Event, HtmlElement, HtmlInputElement, HtmlTemplateElement,
+    InputEvent, Node, Url,
+};
 
 use crate::{
-    callback::callback_async,
     disequality::PolynomialDisequality,
-    log::{measure, now},
+    log::measure,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
     term,
     timeout::timeout,
+    ui::proof_search_status::{Completed, InProgress},
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
@@ -169,9 +172,171 @@ struct PolynomialView {
 
 struct ProofSearchStatusView {
     root: HtmlElement,
-    status_text: HtmlElement,
-    cancel_button: HtmlElement,
-    runtime_text: HtmlElement,
+}
+
+mod proof_search_status {
+    use futures::{
+        never::Never,
+        pin_mut, select_biased,
+        stream::{AbortHandle, Abortable},
+        Future, FutureExt,
+    };
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::spawn_local;
+    use web_sys::{Document, Element, HtmlTemplateElement};
+
+    use crate::{
+        callback::callback_async,
+        log::now,
+        timeout::timeout,
+        web_unchecked::{DocumentUnchecked, ElementUnchecked, NodeUnchecked},
+    };
+
+    pub(crate) struct InProgress {
+        start_time: f64,
+
+        abort_handle: AbortHandle,
+    }
+
+    impl InProgress {
+        pub(crate) fn new_in(
+            document: &Document,
+            root: Element,
+        ) -> (InProgress, impl Future<Output = Cancelled>) {
+            let template: HtmlTemplateElement = document
+                .html_element_by_id_unchecked("proof-search-in-progress-status-view")
+                .unchecked_into();
+            let node: Element = template
+                .content()
+                .clone_node_with_deep(true)
+                .expect("clone_node_with_deep should work")
+                .unchecked_into();
+
+            let (abort_handle, abort_registration) = AbortHandle::new_pair();
+            let cancel_button = node
+                .query_selector("#cancel-button")
+                .expect("query selector should work")
+                .expect("cancel button must exist");
+            let duration_text_element = node
+                .query_selector("#duration-text")
+                .expect("query selector should work")
+                .expect("duration text must exist");
+            let start_time = now();
+
+            let abort_handle_clone = abort_handle.clone();
+            let cancelled = async move {
+                callback_async(&cancel_button, "click").await;
+                abort_handle_clone.abort();
+                Cancelled::from_duration(now() - start_time)
+            };
+
+            spawn_local(async move {
+                let abort_message =
+                    Abortable::new(std::future::pending::<Never>(), abort_registration).fuse();
+                pin_mut!(abort_message);
+
+                root.set_attribute_unchecked("data-proof-search-status", "in-progress");
+
+                select_biased! {
+                    _ = abort_message => return,
+                    _ = timeout(15).fuse() => {}
+                }
+
+                root.set_text_content(None);
+                root.append_child_unchecked(&node);
+
+                loop {
+                    let duration = now() - start_time;
+                    let duration_text = format_duration(duration);
+                    duration_text_element.set_text_content(Some(&format!(
+                        "proof search is running for {duration_text}"
+                    )));
+
+                    select_biased! {
+                        _ = abort_message => break,
+                        _ = timeout(8).fuse() => continue,
+                    };
+                }
+            });
+
+            (
+                InProgress {
+                    start_time: now(),
+                    abort_handle,
+                },
+                cancelled,
+            )
+        }
+
+        pub(crate) fn complete(self) -> Completed {
+            self.abort_handle.abort();
+            Completed::from_duration(now() - self.start_time)
+        }
+
+        pub(crate) fn error(self) -> Errored {
+            self.abort_handle.abort();
+            Errored::from_duration(now() - self.start_time)
+        }
+
+        pub(crate) fn abort(self) {
+            self.abort_handle.abort();
+        }
+    }
+
+    pub(crate) struct Completed {
+        duration: f64,
+    }
+
+    impl Completed {
+        fn from_duration(duration: f64) -> Self {
+            Self { duration }
+        }
+
+        pub(crate) fn duration(&self) -> f64 {
+            self.duration
+        }
+    }
+
+    pub(crate) struct Errored {
+        duration: f64,
+    }
+
+    impl Errored {
+        pub(crate) fn from_duration(duration: f64) -> Self {
+            Self { duration }
+        }
+
+        pub(crate) fn duration(&self) -> f64 {
+            self.duration
+        }
+    }
+
+    pub(crate) struct Cancelled {
+        duration: f64,
+    }
+
+    impl Cancelled {
+        pub(crate) fn from_duration(duration: f64) -> Self {
+            Self { duration }
+        }
+
+        pub(crate) fn duration(&self) -> f64 {
+            self.duration
+        }
+    }
+
+    fn format_duration(duration_in_millis: f64) -> String {
+        assert!(duration_in_millis >= 0.0);
+        match duration_in_millis {
+            d if (0.0..1_000.0).contains(&d) => format!("{d:.1} ms"),
+            d if (1_000.0..(60.0 * 1_000.0)).contains(&d) => format!("{:.2} s", d / 1000.0),
+            d => {
+                let minutes = (d / (60.0 * 1_000.0)).floor();
+                let remaining_seconds = (d - minutes * (60.0 * 1_000.0)) / 1_000.0;
+                format!("{}m {}s", minutes as u32, remaining_seconds as u32)
+            }
+        }
+    }
 }
 
 struct ProofView {
@@ -221,10 +386,6 @@ impl UIElements {
             },
             proof_search_status_view: ProofSearchStatusView {
                 root: document.html_element_by_id_unchecked("proof-search-status"),
-                status_text: document.html_element_by_id_unchecked("proof-search-status-text"),
-                cancel_button: document
-                    .html_element_by_id_unchecked("proof-search-status-cancel-button"),
-                runtime_text: document.html_element_by_id_unchecked("proof-search-status-runtime"),
             },
             proof_view: ProofView {
                 root: document.html_element_by_id_unchecked("proof-view"),
@@ -266,7 +427,7 @@ impl UIElements {
             .right_term
             .set_attribute_unchecked("data-valid", "true");
         self.proof_search_status_view
-            .status_text
+            .root
             .set_attribute_unchecked("data-visible", "true");
         self.polynomial_view
             .root
@@ -296,7 +457,7 @@ impl UIElements {
             .root
             .set_attribute_unchecked("data-visible", "false");
         self.proof_search_status_view
-            .status_text
+            .root
             .set_attribute_unchecked("data-visible", "false");
         self.proof_view
             .root
@@ -309,11 +470,12 @@ impl UIElements {
         proof_result: ProofInProgressSearchResult,
         max_initial_proof_depth: u32,
         worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+        completed: Completed,
     ) {
+        let formatted_duration = format_duration(completed.duration());
+
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
-        let proof_search_status = &self.proof_search_status_view.root;
-        let proof_search_status_text = &self.proof_search_status_view.status_text;
         match proof_result {
             ProofInProgressSearchResult::ProofFound { conclusion, proof } => {
                 proof_view.append_child_unchecked(
@@ -327,9 +489,26 @@ impl UIElements {
                     }
                     .render(document),
                 );
-                proof_search_status
+                self.proof_search_status_view
+                    .root
                     .set_attribute_unchecked("data-proof-search-status", "found-proof");
-                proof_search_status_text.set_text_content(Some("found proof"));
+                let template: HtmlTemplateElement = document
+                    .html_element_by_id_unchecked("proof-search-successful-status-view")
+                    .unchecked_into();
+                let node: Element = template
+                    .content()
+                    .clone_node_with_deep(true)
+                    .expect("clone_node_with_deep should work")
+                    .unchecked_into();
+                let duration_text = node
+                    .query_selector("#duration-text")
+                    .expect("query_selector should work")
+                    .expect("duration-text should exist");
+                duration_text.set_text_content(Some(&formatted_duration));
+                self.proof_search_status_view.root.set_text_content(None);
+                self.proof_search_status_view
+                    .root
+                    .append_child_unchecked(&node);
             }
             ProofInProgressSearchResult::NoProofFound {
                 conclusion,
@@ -347,20 +526,59 @@ impl UIElements {
                     }
                     .render(document),
                 );
-                let (reason_attribute_value, reason_text) = match reason {
+                match reason {
                     crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable {
                         ..
-                    } => (
-                        "not-strictly-monomially-comparable",
-                        "no proof found: not strictly monomially comparable",
-                    ),
+                    } => {
+                        self.proof_search_status_view.root.set_attribute_unchecked(
+                            "data-proof-search-status",
+                            "not-strictly-monomially-comparable",
+                        );
+                        let template: HtmlTemplateElement = document
+                            .html_element_by_id_unchecked(
+                                "proof-search-unsuccessful-not-strictly-monomially-comparable-status-view",
+                            )
+                            .unchecked_into();
+                        let node: Element = template
+                            .content()
+                            .clone_node_with_deep(true)
+                            .expect("clone_node_with_deep should work")
+                            .unchecked_into();
+                        let duration_text = node
+                            .query_selector("#duration-text")
+                            .expect("query_selector should work")
+                            .expect("duration-text should exist");
+                        duration_text.set_text_content(Some(&formatted_duration));
+                        self.proof_search_status_view.root.set_text_content(None);
+                        self.proof_search_status_view
+                            .root
+                            .append_child_unchecked(&node);
+                    }
                     crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => {
-                        ("found-root", "no proof found: found root")
+                        self.proof_search_status_view
+                            .root
+                            .set_attribute_unchecked("data-proof-search-status", "found-root");
+                        let template: HtmlTemplateElement = document
+                            .html_element_by_id_unchecked(
+                                "proof-search-unsuccessful-found-root-status-view",
+                            )
+                            .unchecked_into();
+                        let node: Element = template
+                            .content()
+                            .clone_node_with_deep(true)
+                            .expect("clone_node_with_deep should work")
+                            .unchecked_into();
+                        let duration_text = node
+                            .query_selector("#duration-text")
+                            .expect("query_selector should work")
+                            .expect("duration-text should exist");
+                        duration_text.set_text_content(Some(&formatted_duration));
+                        self.proof_search_status_view.root.set_text_content(None);
+                        self.proof_search_status_view
+                            .root
+                            .append_child_unchecked(&node);
                     }
                 };
-                proof_search_status
-                    .set_attribute_unchecked("data-proof-search-status", reason_attribute_value);
-                proof_search_status_text.set_text_content(Some(reason_text));
             }
         }
     }
@@ -418,6 +636,11 @@ impl UIElements {
             .right
             .append_child_unchecked(&right_polynomial.render(document));
 
+        let (in_progress, cancelled) =
+            InProgress::new_in(document, self.proof_search_status_view.root.clone().into());
+        let cancelled = cancelled.fuse();
+        pin_mut!(cancelled);
+
         let abortable_search_proof_result = search_proof_up_to_depth_abortable(
             worker_pool.clone(),
             disequality,
@@ -433,86 +656,72 @@ impl UIElements {
         let show_progress_timeout = timeout(millis_until_progress_is_shown).fuse();
         pin_mut!(show_progress_timeout);
 
-        let cancel_button_pressed =
-            callback_async(&self.proof_search_status_view.cancel_button, "click").fuse();
-        pin_mut!(cancel_button_pressed);
-
-        let proof_search_start_time = now();
-        let mut runtime_update_interval = millis_until_progress_is_shown * 2;
         loop {
             select_biased! {
                 result = abortable_search_proof_result => match result {
                     Ok(Ok(result)) => {
+                        let completed = in_progress.complete();
                         let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
-                        self.update_proof_view(document, result, max_initial_proof_depth, worker_pool.clone());
-                        let proof_search_duration = now() - proof_search_start_time;
-                        let duration_text = format_duration(proof_search_duration);
-                        self.proof_search_status_view
-                            .runtime_text
-                            .set_text_content(Some(&format!(
-                                "proof search ran for {duration_text}"
-                            )));
+                        self.update_proof_view(document, result, max_initial_proof_depth, worker_pool.clone(), completed);
                         break;
                     },
                     Ok(Err(_)) => {
+                        let errored = in_progress.error();
+                        let formatted_duration = format_duration(errored.duration());
+                        let template: HtmlTemplateElement = document
+                            .html_element_by_id_unchecked(
+                                "proof-search-errored-status-view",
+                            )
+                            .unchecked_into();
+                        let node: Element = template
+                            .content()
+                            .clone_node_with_deep(true)
+                            .expect("clone_node_with_deep should work")
+                            .unchecked_into();
+                        let duration_text = node
+                            .query_selector("#duration-text")
+                            .expect("query_selector should work")
+                            .expect("duration-text should exist");
+                        duration_text.set_text_content(Some(&formatted_duration));
                         self.proof_search_status_view
                             .root
-                            .set_attribute_unchecked("data-proof-search-status", "error");
-                        self.proof_search_status_view
-                            .status_text
-                            .set_text_content(Some("error while searching proof"));
-                        let proof_search_duration = now() - proof_search_start_time;
-                        let duration_text = format_duration(proof_search_duration);
-                        self.proof_search_status_view
-                            .runtime_text
-                            .set_text_content(Some(&format!(
-                                "proof search ran for {duration_text}"
-                            )));
+                            .set_attribute_unchecked("data-proof-search-status", "errored");
+                        self.proof_search_status_view.root.set_text_content(None);
+                        self.proof_search_status_view.root.append_child_unchecked(&node);
                         break;
                     },
                     Err(Aborted) => {
+                        in_progress.abort();
                         break;
                     }
                 },
-                _ = cancel_button_pressed => {
+                cancelled = cancelled => {
+                    abort_handle.abort();
+                    let formatted_duration = format_duration(cancelled.duration());
+                    let template: HtmlTemplateElement = document
+                        .html_element_by_id_unchecked(
+                            "proof-search-cancelled-status-view",
+                        )
+                        .unchecked_into();
+                    let node: Element = template
+                            .content()
+                            .clone_node_with_deep(true)
+                            .expect("clone_node_with_deep should work")
+                            .unchecked_into();
+                    let duration_text = node
+                        .query_selector("#duration-text")
+                        .expect("query_selector should work")
+                        .expect("duration-text should exist");
+                    duration_text.set_text_content(Some(&formatted_duration));
                     self.proof_search_status_view
                         .root
                         .set_attribute_unchecked("data-proof-search-status", "cancelled");
-                    self.proof_search_status_view
-                        .status_text
-                        .set_text_content(Some("cancelled"));
-                    let proof_search_duration = now() - proof_search_start_time;
-                    let duration_text = format_duration(proof_search_duration);
-                    self.proof_search_status_view
-                        .runtime_text
-                        .set_text_content(Some(&format!(
-                            "proof search ran for {duration_text}"
-                        )));
-                    if let Some(handle) = worker_abort_handle.borrow().as_ref() {
-                        handle.abort();
-                    }
+                    self.proof_search_status_view.root.set_text_content(None);
+                    self.proof_search_status_view.root.append_child_unchecked(&node);
                     break;
                 },
                 _ = show_progress_timeout => {
                     self.proof_view.root.set_text_content(None);
-                    self.proof_search_status_view
-                        .root
-                        .set_attribute_unchecked("data-proof-search-status", "in-progress");
-                    self.proof_search_status_view
-                        .status_text
-                        .set_text_content(Some("in progress..."));
-                    runtime_update_interval = 8;
-                    continue;
-                }
-                _ = timeout(runtime_update_interval).fuse() => {
-                    // when worker is aborted, we do not want to update the time anymore
-                    if abort_handle.is_aborted() {
-                        break;
-                    }
-
-                    let proof_search_duration = now() - proof_search_start_time;
-                    let duration_text = format_duration(proof_search_duration);
-                    self.proof_search_status_view.runtime_text.set_text_content(Some(&format!("proof search is running for {duration_text}")));
                     continue;
                 }
             }

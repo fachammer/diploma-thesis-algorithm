@@ -324,6 +324,44 @@
 
       wasm_module.main();
     </script>
+    <template id="proof-search-in-progress-status-view">
+      <span>in progress...</span>
+      <button id="cancel-button">cancel</button>
+      <br />
+      <span id="duration-text"></span>
+    </template>
+    <template id="proof-search-successful-status-view">
+      <span>proof found</span>
+      <br />
+      <span>proof search ran for</span>
+      <span id="duration-text"></span>
+    </template>
+    <template id="proof-search-unsuccessful-found-root-status-view">
+      <span>no proof found: found root</span>
+      <br />
+      <span>proof search ran for</span>
+      <span id="duration-text"></span>
+    </template>
+    <template
+      id="proof-search-unsuccessful-not-strictly-monomially-comparable-status-view"
+    >
+      <span>no proof found: not strictly monomially comparable</span>
+      <br />
+      <span>proof search ran for</span>
+      <span id="duration-text"></span>
+    </template>
+    <template id="proof-search-cancelled-status-view">
+      <span>cancelled</span>
+      <br />
+      <span>proof search ran for</span>
+      <span id="duration-text"></span>
+    </template>
+    <template id="proof-search-errored-status-view">
+      <span>proof search encountered an error</span>
+      <br />
+      <span>proof search ran for</span>
+      <span id="duration-text"></span>
+    </template>
     <main>
       <h1>
         Decidability of Diophantine equations in a theory adjacent to IOpen
@@ -437,12 +475,7 @@
           <span class="label"
             >proof status <span class="phantom-height">≸</span></span
           >
-          <span id="proof-search-status"
-            ><span id="proof-search-status-text"></span>
-            <button id="proof-search-status-cancel-button">cancel</button>
-            <br />
-            <span id="proof-search-status-runtime"></span
-          ></span>
+          <span id="proof-search-status"></span>
           <span></span>
           <span></span>
         </div>
