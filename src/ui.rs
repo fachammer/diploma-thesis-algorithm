@@ -1,6 +1,7 @@
 use std::{cell::RefCell, mem, rc::Rc};
 
 use futures::{
+    never::Never,
     pin_mut, select_biased,
     stream::{AbortHandle, AbortRegistration, Abortable, Aborted},
     FutureExt,
@@ -13,13 +14,14 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
 
 use crate::{
+    callback::callback_async,
     disequality::PolynomialDisequality,
-    log::measure,
+    log::{measure, now},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
     term,
     timeout::timeout,
-    ui::proof_search_status::{Completed, InProgress},
+    ui::proof_search_status::InProgress,
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
@@ -172,154 +174,121 @@ struct ProofSearchStatusView {
     parent: HtmlElement,
 }
 
+impl ProofSearchStatusView {
+    fn set_in_progress(&self, document: &Document) -> InProgress {
+        let root = document.clone_template_by_id_unchecked("proof-search-in-progress-status-view");
+        let cancel_button = root.query_selector_unchecked("#cancel-button");
+        let duration_text_element = root.query_selector_unchecked("#duration-text");
+        let start_time = now();
+
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        let parent = self.root.clone();
+        spawn_local(async move {
+            let abort_message =
+                Abortable::new(std::future::pending::<Never>(), abort_registration).fuse();
+            pin_mut!(abort_message);
+
+            parent.set_attribute_unchecked("data-proof-search-status", "in-progress");
+            parent.replace_children_unchecked(&root);
+
+            loop {
+                let duration = now() - start_time;
+                let duration_text = format_duration(duration);
+                duration_text_element.set_text_content(Some(&format!(
+                    "proof search is running for {duration_text}"
+                )));
+
+                select_biased! {
+                    _ = abort_message => break,
+                    _ = timeout(8).fuse() => {},
+                };
+            }
+        });
+
+        InProgress::new(abort_handle, cancel_button)
+    }
+
+    fn set_errored(&self, document: &Document, proof_search_duration: f64) {
+        self.root
+            .set_attribute_unchecked("data-proof-search-status", "errored");
+        let formatted_duration = format_duration(proof_search_duration);
+        let root = document.clone_template_by_id_unchecked("proof-search-errored-status-view");
+        let duration_text = root.query_selector_unchecked("#duration-text");
+        duration_text.set_text_content(Some(&formatted_duration));
+        self.root.replace_children_unchecked(&root);
+    }
+
+    fn set_cancelled(&self, document: &Document, proof_search_duration: f64) {
+        let formatted_duration = format_duration(proof_search_duration);
+        let root = document.clone_template_by_id_unchecked("proof-search-cancelled-status-view");
+        let duration_text = root.query_selector_unchecked("#duration-text");
+        duration_text.set_text_content(Some(&formatted_duration));
+        self.root
+            .set_attribute_unchecked("data-proof-search-status", "cancelled");
+        self.root.replace_children_unchecked(&root);
+    }
+
+    fn set_found_root(&self, duration: f64, document: &Document) {
+        let formatted_duration = format_duration(duration);
+        self.root
+            .set_attribute_unchecked("data-proof-search-status", "found-root");
+        let root = document
+            .clone_template_by_id_unchecked("proof-search-unsuccessful-found-root-status-view");
+        let duration_text = root.query_selector_unchecked("#duration-text");
+        duration_text.set_text_content(Some(&formatted_duration));
+        self.root.replace_children_unchecked(&root);
+    }
+
+    fn set_not_strictly_monomially_comparable(&self, duration: &f64, document: &Document) {
+        let formatted_duration = format_duration(*duration);
+        self.root.set_attribute_unchecked(
+            "data-proof-search-status",
+            "not-strictly-monomially-comparable",
+        );
+        let root = document.clone_template_by_id_unchecked(
+            "proof-search-unsuccessful-not-strictly-monomially-comparable-status-view",
+        );
+        let duration_text = root.query_selector_unchecked("#duration-text");
+        duration_text.set_text_content(Some(&formatted_duration));
+        self.root.replace_children_unchecked(&root);
+    }
+
+    fn set_found_proof(&self, document: &Document, duration: f64) {
+        let formatted_duration = format_duration(duration);
+        self.root
+            .set_attribute_unchecked("data-proof-search-status", "found-proof");
+        let root = document.clone_template_by_id_unchecked("proof-search-successful-status-view");
+        let duration_text = root.query_selector_unchecked("#duration-text");
+        duration_text.set_text_content(Some(&formatted_duration));
+        self.root.replace_children_unchecked(&root);
+    }
+}
+
 mod proof_search_status {
-    use futures::{
-        never::Never,
-        pin_mut, select_biased,
-        stream::{AbortHandle, Abortable},
-        Future, FutureExt,
-    };
-
-    use wasm_bindgen_futures::spawn_local;
-    use web_sys::{Document, Element};
-
-    use crate::{
-        callback::callback_async,
-        log::now,
-        timeout::timeout,
-        web_unchecked::{DocumentUnchecked, ElementUnchecked, NodeUnchecked},
-    };
+    use futures::stream::AbortHandle;
+    use web_sys::{Element, EventTarget};
 
     pub(crate) struct InProgress {
-        start_time: f64,
-
         abort_handle: AbortHandle,
+        cancel_button: Element,
     }
 
     impl InProgress {
-        pub(crate) fn new_in(
-            document: &Document,
-            parent: Element,
-        ) -> (InProgress, impl Future<Output = Cancelled>) {
-            let root =
-                document.clone_template_by_id_unchecked("proof-search-in-progress-status-view");
-            let cancel_button = root.query_selector_unchecked("#cancel-button");
-            let duration_text_element = root.query_selector_unchecked("#duration-text");
-            let start_time = now();
-
-            let (abort_handle, abort_registration) = AbortHandle::new_pair();
-            let abort_handle_clone = abort_handle.clone();
-            let cancelled = async move {
-                callback_async(&cancel_button, "click").await;
-                abort_handle_clone.abort();
-                Cancelled::from_duration(now() - start_time)
-            };
-
-            spawn_local(async move {
-                let abort_message =
-                    Abortable::new(std::future::pending::<Never>(), abort_registration).fuse();
-                pin_mut!(abort_message);
-
-                parent.set_attribute_unchecked("data-proof-search-status", "in-progress");
-
-                select_biased! {
-                    _ = abort_message => return,
-                    _ = timeout(15).fuse() => {}
-                }
-
-                parent.set_text_content(None);
-                parent.append_child_unchecked(&root);
-
-                loop {
-                    let duration = now() - start_time;
-                    let duration_text = format_duration(duration);
-                    duration_text_element.set_text_content(Some(&format!(
-                        "proof search is running for {duration_text}"
-                    )));
-
-                    select_biased! {
-                        _ = abort_message => break,
-                        _ = timeout(8).fuse() => continue,
-                    };
-                }
-            });
-
-            (
-                InProgress {
-                    start_time: now(),
-                    abort_handle,
-                },
-                cancelled,
-            )
-        }
-
-        pub(crate) fn complete(self) -> Completed {
-            self.abort_handle.abort();
-            Completed::from_duration(now() - self.start_time)
-        }
-
-        pub(crate) fn error(self) -> Errored {
-            self.abort_handle.abort();
-            Errored::from_duration(now() - self.start_time)
-        }
-
-        pub(crate) fn abort(self) {
-            self.abort_handle.abort();
-        }
-    }
-
-    pub(crate) struct Completed {
-        duration: f64,
-    }
-
-    impl Completed {
-        fn from_duration(duration: f64) -> Self {
-            Self { duration }
-        }
-
-        pub(crate) fn duration(&self) -> f64 {
-            self.duration
-        }
-    }
-
-    pub(crate) struct Errored {
-        duration: f64,
-    }
-
-    impl Errored {
-        pub(crate) fn from_duration(duration: f64) -> Self {
-            Self { duration }
-        }
-
-        pub(crate) fn duration(&self) -> f64 {
-            self.duration
-        }
-    }
-
-    pub(crate) struct Cancelled {
-        duration: f64,
-    }
-
-    impl Cancelled {
-        pub(crate) fn from_duration(duration: f64) -> Self {
-            Self { duration }
-        }
-
-        pub(crate) fn duration(&self) -> f64 {
-            self.duration
-        }
-    }
-
-    fn format_duration(duration_in_millis: f64) -> String {
-        assert!(duration_in_millis >= 0.0);
-        match duration_in_millis {
-            d if (0.0..1_000.0).contains(&d) => format!("{d:.1} ms"),
-            d if (1_000.0..(60.0 * 1_000.0)).contains(&d) => format!("{:.2} s", d / 1000.0),
-            d => {
-                let minutes = (d / (60.0 * 1_000.0)).floor();
-                let remaining_seconds = (d - minutes * (60.0 * 1_000.0)) / 1_000.0;
-                format!("{}m {}s", minutes as u32, remaining_seconds as u32)
+        pub(crate) fn new(abort_handle: AbortHandle, cancel_button: Element) -> Self {
+            Self {
+                abort_handle,
+                cancel_button,
             }
+        }
+
+        pub(crate) fn cancel_button(&self) -> &EventTarget {
+            &self.cancel_button
+        }
+    }
+
+    impl Drop for InProgress {
+        fn drop(&mut self) {
+            self.abort_handle.abort();
         }
     }
 }
@@ -456,82 +425,50 @@ impl UIElements {
         proof_result: ProofInProgressSearchResult,
         max_initial_proof_depth: u32,
         worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
-        completed: Completed,
+        duration: f64,
     ) {
-        let formatted_duration = format_duration(completed.duration());
-
         let proof_view = &self.proof_view.root;
         proof_view.set_text_content(None);
         match proof_result {
             ProofInProgressSearchResult::ProofFound { conclusion, proof } => {
-                proof_view.append_child_unchecked(
-                    &ProofDisplay {
-                        proof,
-                        current_depth: 0,
-                        max_depth: max_initial_proof_depth,
-                        conclusion,
-                        previous_split_variable: u32::MAX,
-                        worker_pool,
-                    }
-                    .render(document),
-                );
+                let proof_display = ProofDisplay {
+                    proof,
+                    current_depth: 0,
+                    max_depth: max_initial_proof_depth,
+                    conclusion,
+                    previous_split_variable: u32::MAX,
+                    worker_pool,
+                }
+                .render(document);
+                proof_view.append_child_unchecked(&proof_display);
                 self.proof_search_status_view
-                    .root
-                    .set_attribute_unchecked("data-proof-search-status", "found-proof");
-                let root =
-                    document.clone_template_by_id_unchecked("proof-search-successful-status-view");
-                let duration_text = root.query_selector_unchecked("#duration-text");
-                duration_text.set_text_content(Some(&formatted_duration));
-                self.proof_search_status_view.root.set_text_content(None);
-                self.proof_search_status_view
-                    .root
-                    .append_child_unchecked(&root);
+                    .set_found_proof(document, duration);
             }
             ProofInProgressSearchResult::NoProofFound {
                 conclusion,
                 attempt,
                 reason,
             } => {
-                proof_view.append_child_unchecked(
-                    &ProofDisplay {
-                        proof: attempt,
-                        current_depth: 0,
-                        max_depth: max_initial_proof_depth,
-                        conclusion,
-                        previous_split_variable: u32::MAX,
-                        worker_pool,
-                    }
-                    .render(document),
-                );
+                let proof_display = ProofDisplay {
+                    proof: attempt,
+                    current_depth: 0,
+                    max_depth: max_initial_proof_depth,
+                    conclusion,
+                    previous_split_variable: u32::MAX,
+                    worker_pool,
+                }
+                .render(document);
+                proof_view.append_child_unchecked(&proof_display);
                 match reason {
                     crate::proof_search::NoProofFoundReason::NotStrictlyMonomiallyComparable {
                         ..
                     } => {
-                        self.proof_search_status_view.root.set_attribute_unchecked(
-                            "data-proof-search-status",
-                            "not-strictly-monomially-comparable",
-                        );
-                        let root = document.clone_template_by_id_unchecked("proof-search-unsuccessful-not-strictly-monomially-comparable-status-view");
-                        let duration_text = root.query_selector_unchecked("#duration-text");
-                        duration_text.set_text_content(Some(&formatted_duration));
-                        self.proof_search_status_view.root.set_text_content(None);
                         self.proof_search_status_view
-                            .root
-                            .append_child_unchecked(&root);
+                            .set_not_strictly_monomially_comparable(&duration, document);
                     }
                     crate::proof_search::NoProofFoundReason::ExistsRoot { .. } => {
                         self.proof_search_status_view
-                            .root
-                            .set_attribute_unchecked("data-proof-search-status", "found-root");
-                        let root = document.clone_template_by_id_unchecked(
-                            "proof-search-unsuccessful-found-root-status-view",
-                        );
-                        let duration_text = root.query_selector_unchecked("#duration-text");
-                        duration_text.set_text_content(Some(&formatted_duration));
-                        self.proof_search_status_view.root.set_text_content(None);
-                        self.proof_search_status_view
-                            .root
-                            .append_child_unchecked(&root);
+                            .set_found_root(duration, document);
                     }
                 };
             }
@@ -580,22 +517,16 @@ impl UIElements {
             right_polynomial.clone(),
         );
 
-        self.polynomial_view.left.set_text_content(None);
         self.polynomial_view
             .left
-            .append_child_unchecked(&left_polynomial.render(document));
+            .replace_children_unchecked(&left_polynomial.render(document));
 
         let right_polynomial: Polynomial = Polynomial::from(right.clone());
-        self.polynomial_view.right.set_text_content(None);
         self.polynomial_view
             .right
-            .append_child_unchecked(&right_polynomial.render(document));
+            .replace_children_unchecked(&right_polynomial.render(document));
 
-        let (in_progress, cancelled) =
-            InProgress::new_in(document, self.proof_search_status_view.root.clone().into());
-        let cancelled = cancelled.fuse();
-        pin_mut!(cancelled);
-
+        let proof_search_start_time = now();
         let abortable_search_proof_result = search_proof_up_to_depth_abortable(
             worker_pool.clone(),
             disequality,
@@ -604,61 +535,57 @@ impl UIElements {
             abort_registration,
         )
         .fuse();
-
         pin_mut!(abortable_search_proof_result);
 
-        let millis_until_progress_is_shown = 100;
-        let show_progress_timeout = timeout(millis_until_progress_is_shown).fuse();
-        pin_mut!(show_progress_timeout);
+        let duration = || now() - proof_search_start_time;
 
-        loop {
-            select_biased! {
-                result = abortable_search_proof_result => match result {
-                    Ok(Ok(result)) => {
-                        let completed = in_progress.complete();
-                        let max_initial_proof_depth = url_parameters.max_initial_proof_depth.unwrap_or(4);
-                        self.update_proof_view(document, result, max_initial_proof_depth, worker_pool.clone(), completed);
-                        break;
-                    },
-                    Ok(Err(_)) => {
-                        let errored = in_progress.error();
-                        let formatted_duration = format_duration(errored.duration());
-                        let root = document
-                            .clone_template_by_id_unchecked("proof-search-errored-status-view");
-                        let duration_text = root.query_selector_unchecked("#duration-text");
-                        duration_text.set_text_content(Some(&formatted_duration));
-                        self.proof_search_status_view
-                            .root
-                            .set_attribute_unchecked("data-proof-search-status", "errored");
-                        self.proof_search_status_view.root.set_text_content(None);
-                        self.proof_search_status_view.root.append_child_unchecked(&root);
-                        break;
-                    },
-                    Err(Aborted) => {
-                        in_progress.abort();
-                        break;
-                    }
-                },
-                cancelled = cancelled => {
-                    abort_handle.abort();
-                    let formatted_duration = format_duration(cancelled.duration());
-                    let root = document
-                        .clone_template_by_id_unchecked("proof-search-cancelled-status-view");
-                    let duration_text = root
-                        .query_selector_unchecked("#duration-text");
-                    duration_text.set_text_content(Some(&formatted_duration));
-                    self.proof_search_status_view
-                        .root
-                        .set_attribute_unchecked("data-proof-search-status", "cancelled");
-                    self.proof_search_status_view.root.set_text_content(None);
-                    self.proof_search_status_view.root.append_child_unchecked(&root);
-                    break;
-                },
-                _ = show_progress_timeout => {
-                    self.proof_view.root.set_text_content(None);
-                    continue;
-                }
+        select_biased! {
+            result = abortable_search_proof_result => {
+                self.proof_search_completed(document, url_parameters, worker_pool, duration(), result);
+                return;
+            },
+            _ = timeout(15).fuse() => { }
+        }
+
+        self.proof_view.root.set_text_content(None);
+        let in_progress = self.proof_search_status_view.set_in_progress(document);
+        let cancelled = callback_async(in_progress.cancel_button(), "click").fuse();
+        pin_mut!(cancelled);
+
+        select_biased! {
+            result = abortable_search_proof_result => {
+                self.proof_search_completed(document, url_parameters, worker_pool, duration(), result);
+            },
+            _ = cancelled => {
+                abort_handle.abort();
+                self.proof_search_status_view.set_cancelled(document, duration());
+            },
+        }
+    }
+
+    fn proof_search_completed(
+        &self,
+        document: &Document,
+        url_parameters: &UrlParameters,
+        worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+        duration: f64,
+        result: Result<Result<ProofInProgressSearchResult, Event>, Aborted>,
+    ) {
+        match result {
+            Ok(Ok(result)) => {
+                self.update_proof_view(
+                    document,
+                    result,
+                    url_parameters.max_initial_proof_depth.unwrap_or(4),
+                    worker_pool,
+                    duration,
+                );
             }
+            Ok(Err(_)) => {
+                self.proof_search_status_view
+                    .set_errored(document, duration);
+            }
+            Err(Aborted) => {}
         }
     }
 
