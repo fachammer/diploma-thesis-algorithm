@@ -184,8 +184,7 @@ impl MainLoop {
             .ui_elements
             .proof_search_status_view
             .set_in_progress(&self.document);
-        let cancelled = callback_async(in_progress.cancel_button(), "click").fuse();
-        pin_mut!(cancelled);
+        let cancel_button = in_progress.cancel_button();
 
         select_biased! {
             _ = abort_signal => {
@@ -198,7 +197,7 @@ impl MainLoop {
                 self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
                 Ok(())
             },
-            _ = cancelled => {
+            _ = callback_async(cancel_button, "click").fuse() => {
                 inner_abort_handle.abort();
                 abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
                 self.ui_elements.proof_search_status_view.set_cancelled(&self.document, duration());
