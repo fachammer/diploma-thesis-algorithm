@@ -128,6 +128,7 @@ struct MainLoop {
 enum MainLoopError {
     ValidationError,
     Aborted,
+    Cancelled,
 }
 
 impl From<Aborted> for MainLoopError {
@@ -164,19 +165,18 @@ impl MainLoop {
 
         let duration = || now() - proof_search_start_time;
 
-        loop {
-            select_biased! {
-                _ = abort_signal => {
-                    inner_abort_handle.abort();
-                    continue;
-                }
-                result = abortable_search_proof_result => {
-                    let result = result?;
-                    self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
-                    return Ok(());
-                },
-                _ = timeout(15).fuse() => break
+        select_biased! {
+            _ = abort_signal => {
+                inner_abort_handle.abort();
+                abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
+                return Err(MainLoopError::Aborted);
             }
+            result = abortable_search_proof_result => {
+                let result = result?;
+                self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
+                return Ok(());
+            },
+            _ = timeout(15).fuse() => {}
         }
 
         self.ui_elements.proof_view.root.set_text_content(None);
@@ -187,21 +187,23 @@ impl MainLoop {
         let cancelled = callback_async(in_progress.cancel_button(), "click").fuse();
         pin_mut!(cancelled);
 
-        loop {
-            select_biased! {
-                _ = abort_signal => {
-                    inner_abort_handle.abort();
-                }
-                result = abortable_search_proof_result => {
-                    let result = result?;
-                    self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
-                    break Ok(())
-                },
-                _ = cancelled => {
-                    inner_abort_handle.abort();
-                    self.ui_elements.proof_search_status_view.set_cancelled(&self.document, duration());
-                },
+        select_biased! {
+            _ = abort_signal => {
+                inner_abort_handle.abort();
+                abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
+                Err(MainLoopError::Aborted)
             }
+            result = abortable_search_proof_result => {
+                let result = result?;
+                self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
+                Ok(())
+            },
+            _ = cancelled => {
+                inner_abort_handle.abort();
+                abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
+                self.ui_elements.proof_search_status_view.set_cancelled(&self.document, duration());
+                Err(MainLoopError::Cancelled)
+            },
         }
     }
 

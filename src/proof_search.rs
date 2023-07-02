@@ -180,7 +180,7 @@ pub(crate) enum ProofSearchResult {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum ProofInProgressSearchResult {
     ProofFound {
         conclusion: PolynomialDisequality,
