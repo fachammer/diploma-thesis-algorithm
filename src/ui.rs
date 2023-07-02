@@ -1,21 +1,21 @@
-use std::{cell::RefCell, mem, rc::Rc};
+use std::{cell::RefCell, future::pending, mem, rc::Rc};
 
 use futures::{
     never::Never,
     pin_mut, select_biased,
-    stream::{AbortHandle, AbortRegistration, Abortable, Aborted},
-    FutureExt,
+    stream::{unfold, AbortHandle, AbortRegistration, Abortable, Aborted, StreamExt},
+    FutureExt, Stream,
 };
 use js_sys::encode_uri_component;
 
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{console, Document, Event, HtmlElement, HtmlInputElement, InputEvent, Node, Url};
+use web_sys::{Document, Event, HtmlElement, Node, Url};
 
 use crate::{
     callback::callback_async,
-    disequality::PolynomialDisequality,
+    disequality::{PolynomialDisequality, TermDisequality},
     log::{measure, now},
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
@@ -50,7 +50,6 @@ impl UrlParameters {
         let hide_intro = search_params
             .get("hide-intro")
             .and_then(|h| h.parse::<bool>().ok());
-        console::log_1(&hide_intro.into());
 
         Self {
             left_term,
@@ -68,55 +67,170 @@ pub(crate) async fn setup() {
         .set_attribute_unchecked("data-webassembly-ready", "");
 
     let url = String::from(window_unchecked().location().to_locale_string());
-    let parameters = UrlParameters::from_url(Url::new_unchecked(&url));
+    let url_parameters = UrlParameters::from_url(Url::new_unchecked(&url));
 
-    let worker_abort_handle = Rc::new(RefCell::new(None));
     let worker_pool = Rc::new(RefCell::new(
         measure! {ProofSearchWorkerPool::new(4).await}.expect("worker pool must be ok"),
     ));
+    let ui_elements = UIElements::get_in(&document);
 
-    let left_input = document.html_element_by_id_unchecked("left-term-input");
-    left_input.set_text_content(Some(
-        &parameters.left_term.clone().unwrap_or(String::from("x*x")),
-    ));
-    let parameters_clone = parameters.clone();
-    let worker_abort_handle_clone = worker_abort_handle.clone();
-    let worker_pool_clone = worker_pool.clone();
-    let left_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(move |_| {
-        spawn_local(update(
-            parameters_clone.clone(),
-            worker_abort_handle_clone.clone(),
-            worker_pool_clone.clone(),
-        ));
-    }));
-    left_input.set_oninput(Some(left_input_on_change.as_ref().unchecked_ref()));
-    left_input_on_change.forget();
-
-    let right_input = document.html_element_by_id_unchecked("right-term-input");
-    right_input.set_text_content(Some(
-        &parameters.right_term.clone().unwrap_or(String::from("Sx")),
-    ));
-    let parameters_clone = parameters.clone();
-    let worker_abort_handle_clone = worker_abort_handle.clone();
-    let worker_pool_clone = worker_pool.clone();
-    let right_input_on_change: Closure<dyn Fn(InputEvent)> = Closure::wrap(Box::new(move |_| {
-        spawn_local(update(
-            parameters_clone.clone(),
-            worker_abort_handle_clone.clone(),
-            worker_pool_clone.clone(),
-        ));
-    }));
-    right_input.set_oninput(Some(right_input_on_change.as_ref().unchecked_ref()));
-    right_input_on_change.forget();
-
-    let hide_intro = parameters.hide_intro.unwrap_or(false);
+    let hide_intro = url_parameters.hide_intro.unwrap_or(false);
     if hide_intro {
-        document
-            .html_element_by_id_unchecked("introduction")
+        ui_elements
+            .introduction
             .set_attribute_unchecked("hidden", "true");
     }
 
-    update(parameters, worker_abort_handle, worker_pool).await;
+    let left_input = url_parameters.left_term.as_deref().unwrap_or("x*x");
+    let right_input = url_parameters.right_term.as_deref().unwrap_or("Sx");
+    ui_elements.term_view.set_inputs(left_input, right_input);
+
+    let borrowed_term_view = ui_elements.term_view;
+    let inputs = borrowed_term_view.current_and_future_inputs();
+    pin_mut!(inputs);
+    let main_loop_abort_handle: Rc<RefCell<Option<AbortHandle>>> = Rc::new(RefCell::new(None));
+
+    while let Some((left_term_input, right_term_input)) = inputs.next().await {
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        let previous_abort_handle = main_loop_abort_handle.borrow_mut().replace(abort_handle);
+        if let Some(handle) = previous_abort_handle {
+            handle.abort();
+        }
+
+        let worker_pool = worker_pool.clone();
+        let document = document.clone();
+        let url_parameters = url_parameters.clone();
+        let ui_elements = UIElements::get_in(&document);
+        spawn_local(async move {
+            let main_loop = MainLoop {
+                worker_pool,
+                document,
+                ui_elements,
+                url_parameters,
+                left_term_input,
+                right_term_input,
+            };
+
+            let _ = main_loop.run(abort_registration).await;
+        });
+    }
+}
+
+struct MainLoop {
+    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+    document: Document,
+    ui_elements: UIElements,
+    url_parameters: UrlParameters,
+    left_term_input: String,
+    right_term_input: String,
+}
+
+enum MainLoopError {
+    ValidationError,
+    Aborted,
+}
+
+impl From<Aborted> for MainLoopError {
+    fn from(_: Aborted) -> Self {
+        Self::Aborted
+    }
+}
+
+impl MainLoop {
+    async fn run(self, abort_registration: AbortRegistration) -> Result<(), MainLoopError> {
+        self.ui_elements.update_history(
+            &self.left_term_input,
+            &self.right_term_input,
+            &self.url_parameters,
+        );
+
+        let term_disequality = self.validate_terms()?;
+        let disequality = PolynomialDisequality::from(term_disequality).reduce();
+        self.show_polynomial_disequality(&disequality);
+
+        let proof_search_start_time = now();
+        let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
+        pin_mut!(abort_signal);
+        let (inner_abort_handle, inner_abort_registration) = AbortHandle::new_pair();
+        let abortable_search_proof_result = search_proof_up_to_depth_abortable(
+            self.worker_pool.clone(),
+            disequality,
+            10,
+            u32::MAX,
+            inner_abort_registration,
+        )
+        .fuse();
+        pin_mut!(abortable_search_proof_result);
+
+        let duration = || now() - proof_search_start_time;
+
+        loop {
+            select_biased! {
+                _ = abort_signal => {
+                    inner_abort_handle.abort();
+                    continue;
+                }
+                result = abortable_search_proof_result => {
+                    let result = result?;
+                    self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
+                    return Ok(());
+                },
+                _ = timeout(15).fuse() => break
+            }
+        }
+
+        self.ui_elements.proof_view.root.set_text_content(None);
+        let in_progress = self
+            .ui_elements
+            .proof_search_status_view
+            .set_in_progress(&self.document);
+        let cancelled = callback_async(in_progress.cancel_button(), "click").fuse();
+        pin_mut!(cancelled);
+
+        loop {
+            select_biased! {
+                _ = abort_signal => {
+                    inner_abort_handle.abort();
+                }
+                result = abortable_search_proof_result => {
+                    let result = result?;
+                    self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
+                    break Ok(())
+                },
+                _ = cancelled => {
+                    inner_abort_handle.abort();
+                    self.ui_elements.proof_search_status_view.set_cancelled(&self.document, duration());
+                },
+            }
+        }
+    }
+
+    fn show_polynomial_disequality(&self, disequality: &PolynomialDisequality) {
+        self.ui_elements
+            .polynomial_view
+            .set_polynomial_disequality(disequality);
+    }
+
+    fn validate_terms(&self) -> Result<TermDisequality, MainLoopError> {
+        let validation_result = validate(&self.left_term_input, &self.right_term_input);
+        let (left, right) = match validation_result {
+            ValidationResult::Invalid {
+                left_is_valid,
+                right_is_valid,
+            } => {
+                self.ui_elements.set_invalid(left_is_valid, right_is_valid);
+                return Err(MainLoopError::ValidationError);
+            }
+            ValidationResult::Valid {
+                left_term,
+                right_term,
+            } => {
+                self.ui_elements.set_valid();
+                (left_term, right_term)
+            }
+        };
+        Ok(TermDisequality::from_terms(left, right))
+    }
 }
 
 enum ValidationResult {
@@ -159,14 +273,52 @@ fn validate(left_term_text: &str, right_term_text: &str) -> ValidationResult {
 }
 
 struct TermView {
-    left_term: HtmlInputElement,
-    right_term: HtmlInputElement,
+    left_term: HtmlElement,
+    right_term: HtmlElement,
+}
+
+impl TermView {
+    fn get_current_input(&self) -> (String, String) {
+        let left_input = self.left_term.text_content().unwrap_or_default();
+        let right_input = self.right_term.text_content().unwrap_or_default();
+        (left_input, right_input)
+    }
+    fn current_and_future_inputs(&self) -> impl Stream<Item = (String, String)> + '_ {
+        futures::stream::once(async { self.get_current_input() }).chain(unfold(
+            (),
+            move |_| async move {
+                let next_left_input = callback_async(&self.left_term, "input").fuse();
+                pin_mut!(next_left_input);
+                let next_right_input = callback_async(&self.right_term, "input").fuse();
+                pin_mut!(next_right_input);
+                select_biased! {
+                    _ = next_left_input => Some((self.get_current_input(), ())),
+                    _ = next_right_input => Some((self.get_current_input(), ())),
+                }
+            },
+        ))
+    }
+
+    fn set_inputs(&self, left: &str, right: &str) {
+        self.left_term.set_text_content(Some(left));
+        self.right_term.set_text_content(Some(right));
+    }
 }
 
 struct PolynomialView {
+    document: Document,
     root: HtmlElement,
     left: HtmlElement,
     right: HtmlElement,
+}
+
+impl PolynomialView {
+    fn set_polynomial_disequality(&self, disequality: &PolynomialDisequality) {
+        self.left
+            .replace_children_with_node_1(&disequality.left.clone().render(&self.document));
+        self.right
+            .replace_children_with_node_1(&disequality.right.clone().render(&self.document));
+    }
 }
 
 struct ProofSearchStatusView {
@@ -303,14 +455,6 @@ struct ValidationMessagesView {
     right_term: HtmlElement,
 }
 
-struct UIElements {
-    term_view: TermView,
-    polynomial_view: PolynomialView,
-    proof_search_status_view: ProofSearchStatusView,
-    proof_view: ProofView,
-    validation_messages: ValidationMessagesView,
-}
-
 fn format_duration(duration_in_millis: f64) -> String {
     assert!(duration_in_millis >= 0.0);
     match duration_in_millis {
@@ -324,19 +468,29 @@ fn format_duration(duration_in_millis: f64) -> String {
     }
 }
 
+struct UIElements {
+    term_view: TermView,
+    polynomial_view: PolynomialView,
+    proof_search_status_view: ProofSearchStatusView,
+    proof_view: ProofView,
+    validation_messages: ValidationMessagesView,
+    introduction: HtmlElement,
+}
+
 impl UIElements {
     fn get_in(document: &Document) -> Self {
         Self {
             term_view: {
                 TermView {
-                    left_term: document.input_by_id_unchecked("left-term-input"),
-                    right_term: document.input_by_id_unchecked("right-term-input"),
+                    left_term: document.html_element_by_id_unchecked("left-term-input"),
+                    right_term: document.html_element_by_id_unchecked("right-term-input"),
                 }
             },
             polynomial_view: PolynomialView {
                 root: document.html_element_by_id_unchecked("polynomial-view"),
                 left: document.html_element_by_id_unchecked("left-polynomial"),
                 right: document.html_element_by_id_unchecked("right-polynomial"),
+                document: document.clone(),
             },
             proof_search_status_view: ProofSearchStatusView {
                 parent: document.html_element_by_id_unchecked("proof-search-status-view"),
@@ -350,19 +504,8 @@ impl UIElements {
                 left_term: document.html_element_by_id_unchecked("left-term-validation-message"),
                 right_term: document.html_element_by_id_unchecked("right-term-validation-message"),
             },
+            introduction: document.html_element_by_id_unchecked("introduction"),
         }
-    }
-
-    fn left_term_text(&self) -> String {
-        self.term_view.left_term.text_content().unwrap_or_default()
-    }
-
-    fn right_term_text(&self) -> String {
-        self.term_view.right_term.text_content().unwrap_or_default()
-    }
-
-    fn validate(&self) -> ValidationResult {
-        validate(&self.left_term_text(), &self.right_term_text())
     }
 
     fn set_valid(&self) {
@@ -432,7 +575,7 @@ impl UIElements {
         match proof_result {
             ProofInProgressSearchResult::ProofFound { conclusion, proof } => {
                 let proof_display = ProofDisplay {
-                    proof,
+                    proof: &proof,
                     current_depth: 0,
                     max_depth: max_initial_proof_depth,
                     conclusion,
@@ -450,7 +593,7 @@ impl UIElements {
                 reason,
             } => {
                 let proof_display = ProofDisplay {
-                    proof: attempt,
+                    proof: &attempt,
                     current_depth: 0,
                     max_depth: max_initial_proof_depth,
                     conclusion,
@@ -475,102 +618,16 @@ impl UIElements {
         }
     }
 
-    async fn update(
-        &self,
-        document: &Document,
-        url_parameters: &UrlParameters,
-        worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>,
-        worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
-    ) {
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        let previous_abort_handle = worker_abort_handle
-            .borrow_mut()
-            .replace(abort_handle.clone());
-        if let Some(handle) = previous_abort_handle {
-            handle.abort();
-        }
-
-        self.update_history(url_parameters);
-        let validation_result = self.validate();
-
-        let (left, right) = match validation_result {
-            ValidationResult::Invalid {
-                left_is_valid,
-                right_is_valid,
-            } => {
-                self.set_invalid(left_is_valid, right_is_valid);
-                return;
-            }
-            ValidationResult::Valid {
-                left_term,
-                right_term,
-            } => {
-                self.set_valid();
-                (left_term, right_term)
-            }
-        };
-
-        let left_polynomial = Polynomial::from(left.clone());
-        let right_polynomial: Polynomial = Polynomial::from(right.clone());
-        let disequality = PolynomialDisequality::from_polynomials_reduced(
-            left_polynomial.clone(),
-            right_polynomial.clone(),
-        );
-
-        self.polynomial_view
-            .left
-            .replace_children_with_node_1(&left_polynomial.render(document));
-        self.polynomial_view
-            .right
-            .replace_children_with_node_1(&right_polynomial.render(document));
-
-        let proof_search_start_time = now();
-        let abortable_search_proof_result = search_proof_up_to_depth_abortable(
-            worker_pool.clone(),
-            disequality,
-            10,
-            u32::MAX,
-            abort_registration,
-        )
-        .fuse();
-        pin_mut!(abortable_search_proof_result);
-
-        let duration = || now() - proof_search_start_time;
-
-        select_biased! {
-            result = abortable_search_proof_result => {
-                self.proof_search_completed(document, url_parameters, worker_pool, duration(), result);
-                return;
-            },
-            _ = timeout(15).fuse() => { }
-        }
-
-        self.proof_view.root.set_text_content(None);
-        let in_progress = self.proof_search_status_view.set_in_progress(document);
-        let cancelled = callback_async(in_progress.cancel_button(), "click").fuse();
-        pin_mut!(cancelled);
-
-        select_biased! {
-            result = abortable_search_proof_result => {
-                self.proof_search_completed(document, url_parameters, worker_pool, duration(), result);
-            },
-            _ = cancelled => {
-                abort_handle.abort();
-                self.proof_search_status_view.set_cancelled(document, duration());
-            },
-        }
-    }
-
     fn proof_search_completed(
         &self,
         document: &Document,
         url_parameters: &UrlParameters,
         worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
         duration: f64,
-        result: Result<Result<ProofInProgressSearchResult, Event>, Aborted>,
+        result: Result<ProofInProgressSearchResult, Event>,
     ) {
         match result {
-            Ok(Ok(result)) => {
+            Ok(result) => {
                 self.update_proof_view(
                     document,
                     result,
@@ -579,17 +636,19 @@ impl UIElements {
                     duration,
                 );
             }
-            Ok(Err(_)) => {
+            Err(_) => {
                 self.proof_search_status_view
                     .set_errored(document, duration);
             }
-            Err(Aborted) => {}
         }
     }
 
-    fn update_history(&self, url_parameters: &UrlParameters) {
-        let left_term_input = self.left_term_text();
-        let right_term_input = self.right_term_text();
+    fn update_history(
+        &self,
+        left_term_input: &str,
+        right_term_input: &str,
+        url_parameters: &UrlParameters,
+    ) {
         let max_initial_depth_param = url_parameters
             .max_initial_proof_depth
             .map(|m| {
@@ -612,39 +671,27 @@ impl UIElements {
                 "",
                 Some(&format!(
                     "?left={}&right={}{max_initial_depth_param}{hide_intro_param}",
-                    encode_uri_component(&left_term_input),
-                    encode_uri_component(&right_term_input)
+                    encode_uri_component(left_term_input),
+                    encode_uri_component(right_term_input)
                 )),
             )
             .expect("push state should not fail");
     }
 }
 
-async fn update(
-    parameters: UrlParameters,
-    worker_abort_handle: Rc<RefCell<Option<AbortHandle>>>,
-    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
-) {
-    let document = document_unchecked();
-    let ui_elements = UIElements::get_in(&document);
-    ui_elements
-        .update(&document, &parameters, worker_abort_handle, worker_pool)
-        .await;
-}
-
 trait RenderNode {
-    fn render(self, document: &Document) -> Node;
+    fn render(&self, document: &Document) -> Node;
 }
 
 impl RenderNode for Polynomial {
-    fn render(self, document: &Document) -> Node {
+    fn render(&self, document: &Document) -> Node {
         let node = document
             .create_element("span")
             .expect("create span element should succeed");
         node.set_inner_html(&format!(
             "{}",
             PolynomialDisplay {
-                polynomial: &self,
+                polynomial: self,
                 variable_mapping: &|v| String::from(
                     char::try_from(v).expect("variable must be a valid char value")
                 ),
@@ -664,7 +711,7 @@ async fn search_proof_up_to_depth_abortable(
     previous_split_variable: u32,
     abort_registration: AbortRegistration,
 ) -> Result<Result<ProofInProgressSearchResult, Event>, Aborted> {
-    let worker = worker_pool.borrow_mut().pop_worker();
+    let worker = worker_pool.as_ref().borrow_mut().pop_worker();
     let worker = match worker {
         Some(worker) => worker,
         None => match ProofSearchWorker::new().await {
@@ -682,7 +729,7 @@ async fn search_proof_up_to_depth_abortable(
     match result {
         Ok(Ok(_)) => {
             // if worker succeeds, reuse it by giving it back to the pool
-            worker_pool.borrow_mut().push_worker(worker);
+            worker_pool.as_ref().borrow_mut().push_worker(worker);
         }
         Err(Aborted) | Ok(Err(_)) => {
             spawn_local(async move {
@@ -691,7 +738,7 @@ async fn search_proof_up_to_depth_abortable(
                 // therefore we drop the worker and put a new worker in its place
                 mem::drop(worker);
                 if let Ok(new_worker) = ProofSearchWorker::new().await {
-                    worker_pool.borrow_mut().push_worker(new_worker);
+                    worker_pool.as_ref().borrow_mut().push_worker(new_worker);
                 }
                 // if we cannot create a worker right now,
                 // we try again when searching for a proof the next time
@@ -724,8 +771,8 @@ pub(crate) mod proof_display {
 
     use super::{search_proof_up_to_depth_abortable, RenderNode};
 
-    pub(crate) struct ProofDisplay {
-        pub(crate) proof: ProofInProgress,
+    pub(crate) struct ProofDisplay<'a> {
+        pub(crate) proof: &'a ProofInProgress,
         pub(crate) current_depth: u32,
         pub(crate) max_depth: u32,
         pub(crate) conclusion: PolynomialDisequality,
@@ -733,9 +780,9 @@ pub(crate) mod proof_display {
         pub(crate) worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
     }
 
-    impl RenderNode for ProofDisplay {
-        fn render(self, document: &Document) -> Node {
-            match self.proof {
+    impl<'a> RenderNode for ProofDisplay<'a> {
+        fn render(&self, document: &Document) -> Node {
+            match &self.proof {
                 ProofInProgress::SuccessorNonZero => {
                     render_proof_leaf(document, &self.conclusion, ProofLeaf::SuccessorNonZero)
                 }
@@ -752,14 +799,17 @@ pub(crate) mod proof_display {
                         render_proof_leaf(document, &self.conclusion, ProofLeaf::InProgress)
                             .unchecked_into();
                     let node_clone = node.clone();
+                    let worker_pool_clone = self.worker_pool.clone();
+                    let conclusion_clone = self.conclusion.clone();
+                    let previous_split_variable = self.previous_split_variable;
                     spawn_local(async move {
                         let document = document_unchecked();
                         let (_, abort_registration) = AbortHandle::new_pair();
                         let result = search_proof_up_to_depth_abortable(
-                            self.worker_pool.clone(),
-                            self.conclusion,
+                            worker_pool_clone.clone(),
+                            conclusion_clone,
                             5,
-                            self.previous_split_variable,
+                            previous_split_variable,
                             abort_registration,
                         )
                         .await
@@ -777,12 +827,12 @@ pub(crate) mod proof_display {
                                 ..
                             } => {
                                 let proof_display = ProofDisplay {
-                                    proof,
+                                    proof: &proof,
                                     current_depth: 0,
                                     max_depth: 0,
                                     conclusion,
-                                    previous_split_variable: self.previous_split_variable,
-                                    worker_pool: self.worker_pool.clone(),
+                                    previous_split_variable,
+                                    worker_pool: worker_pool_clone,
                                 };
                                 let proof_node = proof_display.render(&document);
                                 node_clone
@@ -830,7 +880,7 @@ pub(crate) mod proof_display {
 
                     let inference_text = document.create_text_node(&format!(
                         "split on {}",
-                        char::try_from(variable).expect("must be a valid char")
+                        char::try_from(*variable).expect("must be a valid char")
                     ));
                     let inference_tooltip = document.create_div_unchecked();
                     inference_tooltip.set_attribute_unchecked("class", "tooltip");
@@ -855,21 +905,24 @@ pub(crate) mod proof_display {
 
                     if self.current_depth < self.max_depth {
                         let zero_subproof_node = ProofDisplay {
-                            proof: *zero_proof,
+                            proof: zero_proof.as_ref(),
                             current_depth: self.current_depth + 1,
                             max_depth: self.max_depth,
-                            conclusion: self.conclusion.at_variable_zero(variable),
-                            previous_split_variable: variable,
+                            conclusion: self.conclusion.at_variable_zero(*variable),
+                            previous_split_variable: *variable,
                             worker_pool: self.worker_pool.clone(),
                         }
                         .render(document);
                         let successor_subproof_node = ProofDisplay {
-                            proof: *successor_proof,
+                            proof: successor_proof.as_ref(),
                             current_depth: self.current_depth + 1,
                             max_depth: self.max_depth,
-                            conclusion: self.conclusion.into_at_variable_plus_one(variable),
-                            previous_split_variable: variable,
-                            worker_pool: self.worker_pool,
+                            conclusion: self
+                                .conclusion
+                                .clone()
+                                .into_at_variable_plus_one(*variable),
+                            previous_split_variable: *variable,
+                            worker_pool: self.worker_pool.clone(),
                         }
                         .render(document);
                         let subproofs_node = document.create_div_unchecked();
@@ -897,28 +950,33 @@ pub(crate) mod proof_display {
                         );
                         expand_button_callback.forget();
                     } else {
+                        let zero_proof = zero_proof.clone();
+                        let successor_proof = successor_proof.clone();
+                        let worker_pool = self.worker_pool.clone();
+                        let conclusion = self.conclusion.clone();
+                        let variable = *variable;
                         let expand_button_callback = Closure::wrap(Box::new(move |_| {
                             if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
                                 let document = document_unchecked();
+
                                 let zero_subproof_node = ProofDisplay {
-                                    proof: *zero_proof.clone(),
+                                    proof: zero_proof.as_ref(),
                                     current_depth: 0,
                                     max_depth: 0,
-                                    conclusion: self.conclusion.at_variable_zero(variable),
+                                    conclusion: conclusion.at_variable_zero(variable),
                                     previous_split_variable: variable,
-                                    worker_pool: self.worker_pool.clone(),
+                                    worker_pool: worker_pool.clone(),
                                 }
                                 .render(&document);
                                 let successor_subproof_node = ProofDisplay {
-                                    proof: *successor_proof.clone(),
+                                    proof: successor_proof.as_ref(),
                                     current_depth: 0,
                                     max_depth: 0,
-                                    conclusion: self
-                                        .conclusion
+                                    conclusion: conclusion
                                         .clone()
                                         .into_at_variable_plus_one(variable),
                                     previous_split_variable: variable,
-                                    worker_pool: self.worker_pool.clone(),
+                                    worker_pool: worker_pool.clone(),
                                 }
                                 .render(&document);
                                 let subproofs_node = document.create_div_unchecked();
@@ -979,281 +1037,6 @@ pub(crate) mod proof_display {
                 }
                 ProofLeaf::InProgress => {
                     write!(f, "...")
-                }
-            }
-        }
-    }
-
-    fn render_proof_leaf(
-        document: &Document,
-        conclusion: &PolynomialDisequality,
-        proof_leaf: ProofLeaf,
-    ) -> Node {
-        let conclusion = conclusion.reduced();
-        let conclusion_text = document
-            .create_element("span")
-            .expect("create span should work");
-        conclusion_text.set_inner_html(&format!(
-            "{} ≠ {}",
-            PolynomialDisplay {
-                polynomial: &conclusion.left,
-                variable_mapping: &|v| String::from(
-                    char::try_from(v).expect("must be a valid char")
-                ),
-                number_of_largest_monomials: 1,
-                number_of_smallest_monomials: 3,
-                exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
-            },
-            PolynomialDisplay {
-                polynomial: &conclusion.right,
-                variable_mapping: &|v| String::from(
-                    char::try_from(v).expect("must be a valid char")
-                ),
-                number_of_largest_monomials: 1,
-                number_of_smallest_monomials: 3,
-                exponent_display_style: ExponentDisplayStyle::SuperscriptTag,
-            },
-        ));
-
-        let conclusion_node = document.create_div_unchecked();
-        conclusion_node.set_attribute_unchecked("class", "conclusion");
-        conclusion_node.append_child_unchecked(&conclusion_text);
-        conclusion_node.append_child_unchecked(&create_phantom_height(document));
-
-        let inference_text = document.create_text_node(&proof_leaf.to_string());
-        let inference_node = document.create_div_unchecked();
-        inference_node.set_attribute_unchecked("class", "inference");
-        inference_node.append_child_unchecked(&inference_text);
-
-        let internal_proof_node = document.create_div_unchecked();
-        internal_proof_node.set_attribute_unchecked("class", "proof-node");
-        internal_proof_node.append_child_unchecked(&conclusion_node);
-        internal_proof_node.append_child_unchecked(&inference_node);
-
-        let proof_node = document.create_div_unchecked();
-        proof_node.set_attribute_unchecked("class", "proof");
-        proof_node.set_attribute_unchecked("data-inference-type", &proof_leaf.inference_type());
-        proof_node.set_attribute_unchecked("data-expanded", "");
-        proof_node.append_child_unchecked(&internal_proof_node);
-
-        proof_node.into()
-    }
-
-    fn create_phantom_height(document: &Document) -> Element {
-        let phantom_height = document.create_element_unchecked("span");
-        phantom_height.set_attribute_unchecked("class", "phantom-height");
-        phantom_height.set_inner_html("M<sup>M</sup>");
-        phantom_height
-    }
-}
-
-mod complete_polynomial_proof_display {
-    use std::fmt::Display;
-
-    use wasm_bindgen::{prelude::Closure, JsCast};
-    use web_sys::{Document, Element, Event, Node};
-
-    use crate::{
-        disequality::PolynomialDisequality,
-        polynomial::{ExponentDisplayStyle, PolynomialDisplay},
-        proof::CompletePolynomialProof,
-        web_unchecked::{
-            document_unchecked, DocumentUnchecked, ElementUnchecked, EventTargetUnchecked,
-            NodeUnchecked,
-        },
-    };
-
-    use super::RenderNode;
-
-    struct ProofDisplay {
-        proof: CompletePolynomialProof,
-        current_depth: u32,
-        max_depth: u32,
-    }
-
-    impl RenderNode for ProofDisplay {
-        fn render(self, document: &Document) -> Node {
-            match self.proof {
-                CompletePolynomialProof::SuccessorNonZero { conclusion } => {
-                    render_proof_leaf(document, &conclusion, ProofLeaf::SuccessorNonZero)
-                }
-                CompletePolynomialProof::FoundRoot { conclusion } => {
-                    render_proof_leaf(document, &conclusion, ProofLeaf::FoundRoot)
-                }
-                CompletePolynomialProof::NotStrictlyMonomiallyComparable { conclusion } => {
-                    render_proof_leaf(
-                        document,
-                        &conclusion,
-                        ProofLeaf::NotStrictlyMonomiallyComparable,
-                    )
-                }
-                CompletePolynomialProof::Split {
-                    variable,
-                    conclusion,
-                    zero_proof,
-                    successor_proof,
-                } => {
-                    let conclusion = conclusion.reduced();
-                    let conclusion_text = document
-                        .create_element("span")
-                        .expect("create span should work");
-                    conclusion_text.set_inner_html(&format!(
-                        "{} ≠ {}",
-                        PolynomialDisplay {
-                            polynomial: &conclusion.left,
-                            variable_mapping: &|v| String::from(
-                                char::try_from(v).expect("must be a valid char")
-                            ),
-                            number_of_largest_monomials: 1,
-                            number_of_smallest_monomials: 3,
-                            exponent_display_style: ExponentDisplayStyle::SuperscriptTag
-                        },
-                        PolynomialDisplay {
-                            polynomial: &conclusion.right,
-                            variable_mapping: &|v| String::from(
-                                char::try_from(v).expect("must be a valid char")
-                            ),
-                            number_of_largest_monomials: 1,
-                            number_of_smallest_monomials: 3,
-                            exponent_display_style: ExponentDisplayStyle::SuperscriptTag
-                        },
-                    ));
-                    let conclusion_node = document.create_div_unchecked();
-                    conclusion_node.append_child_unchecked(&conclusion_text);
-                    conclusion_node.append_child_unchecked(&create_phantom_height(document));
-                    conclusion_node.set_attribute_unchecked("class", "conclusion");
-
-                    let inference_text = document.create_text_node(&format!(
-                        "split on {}",
-                        char::try_from(variable).expect("must be a valid char")
-                    ));
-                    let inference_tooltip = document.create_div_unchecked();
-                    inference_tooltip.set_attribute_unchecked("class", "tooltip");
-                    let inference_node = document.create_div_unchecked();
-                    inference_node.set_attribute_unchecked("class", "inference");
-                    inference_node.set_title("show subproofs");
-                    inference_node.append_child_unchecked(&inference_text);
-                    inference_node.append_child_unchecked(&inference_tooltip);
-
-                    let internal_proof_node = document.create_div_unchecked();
-                    internal_proof_node.set_attribute_unchecked("class", "proof-node");
-                    internal_proof_node.append_child_unchecked(&conclusion_node);
-                    internal_proof_node.append_child_unchecked(&inference_node);
-
-                    let proof_node = document.create_div_unchecked();
-                    proof_node.set_attribute_unchecked("class", "proof");
-                    proof_node.set_attribute_unchecked("data-inference-type", "split");
-                    proof_node.append_child_unchecked(&internal_proof_node);
-
-                    let proof_node_clone = proof_node.clone();
-                    let inference_node_clone = inference_node.clone();
-
-                    if self.current_depth < self.max_depth {
-                        let zero_subproof_node = ProofDisplay {
-                            proof: *zero_proof,
-                            current_depth: self.current_depth + 1,
-                            max_depth: self.max_depth,
-                        }
-                        .render(document);
-                        let successor_subproof_node = ProofDisplay {
-                            proof: *successor_proof,
-                            current_depth: self.current_depth + 1,
-                            max_depth: self.max_depth,
-                        }
-                        .render(document);
-                        let subproofs_node = document.create_div_unchecked();
-                        subproofs_node.set_attribute_unchecked("class", "subproofs");
-                        subproofs_node.append_child_unchecked(&zero_subproof_node);
-                        subproofs_node.append_child_unchecked(&successor_subproof_node);
-                        proof_node.append_child_unchecked(&subproofs_node);
-                        proof_node.set_attribute_unchecked("data-expanded", "");
-                        inference_node.set_title("hide subproofs");
-
-                        let expand_button_callback = Closure::wrap(Box::new(move |_| {
-                            proof_node_clone
-                                .toggle_attribute("data-expanded")
-                                .expect("toggle attribute should work");
-                            if proof_node_clone.has_attribute("data-expanded") {
-                                inference_node_clone.set_title("hide subproofs");
-                            } else {
-                                inference_node_clone.set_title("show subproofs");
-                            }
-                        })
-                            as Box<dyn FnMut(Event)>);
-                        inference_node.add_event_listener_with_callback_unchecked(
-                            "click",
-                            expand_button_callback.as_ref().unchecked_ref(),
-                        );
-                        expand_button_callback.forget();
-                    } else {
-                        let expand_button_callback = Closure::wrap(Box::new(move |_| {
-                            if let Ok(None) = proof_node_clone.query_selector(".subproofs") {
-                                let document = document_unchecked();
-                                let zero_subproof_node = ProofDisplay {
-                                    proof: *zero_proof.clone(),
-                                    current_depth: 0,
-                                    max_depth: 0,
-                                }
-                                .render(&document);
-                                let successor_subproof_node = ProofDisplay {
-                                    proof: *successor_proof.clone(),
-                                    current_depth: 0,
-                                    max_depth: 0,
-                                }
-                                .render(&document);
-                                let subproofs_node = document.create_div_unchecked();
-                                subproofs_node.set_attribute_unchecked("class", "subproofs");
-                                subproofs_node.append_child_unchecked(&zero_subproof_node);
-                                subproofs_node.append_child_unchecked(&successor_subproof_node);
-                                proof_node_clone.append_child_unchecked(&subproofs_node);
-                            }
-
-                            proof_node_clone
-                                .toggle_attribute("data-expanded")
-                                .expect("toggle attribute should work");
-                            if proof_node_clone.has_attribute("data-expanded") {
-                                inference_node_clone.set_title("hide subproofs");
-                            } else {
-                                inference_node_clone.set_title("show subproofs");
-                            }
-                        })
-                            as Box<dyn FnMut(Event)>);
-                        inference_node.add_event_listener_with_callback_unchecked(
-                            "click",
-                            expand_button_callback.as_ref().unchecked_ref(),
-                        );
-                        expand_button_callback.forget();
-                    }
-
-                    proof_node.into()
-                }
-            }
-        }
-    }
-
-    enum ProofLeaf {
-        SuccessorNonZero,
-        FoundRoot,
-        NotStrictlyMonomiallyComparable,
-    }
-
-    impl ProofLeaf {
-        fn inference_type(&self) -> String {
-            String::from(match self {
-                ProofLeaf::SuccessorNonZero => "successor-non-zero",
-                ProofLeaf::FoundRoot => "found-root",
-                ProofLeaf::NotStrictlyMonomiallyComparable => "not-strictly-monomially-comparable",
-            })
-        }
-    }
-
-    impl Display for ProofLeaf {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                ProofLeaf::SuccessorNonZero => write!(f, "✓"),
-                ProofLeaf::FoundRoot => write!(f, "✘"),
-                ProofLeaf::NotStrictlyMonomiallyComparable => {
-                    write!(f, "✘")
                 }
             }
         }

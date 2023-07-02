@@ -390,7 +390,7 @@
             const rightTermInput = document.getElementById("right-term-input");
             leftTermInput.textContent = left;
             rightTermInput.textContent = right;
-            leftTermInput.oninput();
+            leftTermInput.dispatchEvent(new InputEvent("input"));
           }
         </script>
         <div id="example-buttons">

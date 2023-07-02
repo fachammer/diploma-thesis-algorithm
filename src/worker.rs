@@ -106,6 +106,7 @@ impl AsyncWorker {
 impl Drop for AsyncWorker {
     fn drop(&mut self) {
         self.worker.terminate();
+        console::log_1(&"worker terminated".into());
     }
 }
 
