@@ -130,9 +130,10 @@ pub(crate) async fn setup() {
                         .proof_search_status_view
                         .set_cancelled(&document, duration);
                 }
-                UiAction::ShowInvalid => {
-                    todo!()
-                }
+                UiAction::ShowInvalid {
+                    left_is_valid,
+                    right_is_valid,
+                } => ui_elements.set_invalid(left_is_valid, right_is_valid),
                 UiAction::DoNothing => {}
             };
         });
@@ -158,7 +159,10 @@ enum UiAction {
     ShowCancelled {
         duration: f64,
     },
-    ShowInvalid,
+    ShowInvalid {
+        left_is_valid: bool,
+        right_is_valid: bool,
+    },
     DoNothing,
 }
 
@@ -170,8 +174,14 @@ impl MainLoop {
             &self.url_parameters,
         );
 
-        let Ok(term_disequality) = self.validate_terms() else {
-            return UiAction::ShowInvalid;
+        let term_disequality = match self.validate_terms() {
+            Ok(term_disequality) => term_disequality,
+            Err((left_is_valid, right_is_valid)) => {
+                return UiAction::ShowInvalid {
+                    left_is_valid,
+                    right_is_valid,
+                };
+            }
         };
         let disequality = PolynomialDisequality::from(term_disequality).reduce();
         self.show_polynomial_disequality(&disequality);
@@ -242,15 +252,14 @@ impl MainLoop {
             .set_polynomial_disequality(disequality);
     }
 
-    fn validate_terms(&self) -> Result<TermDisequality, UiAction> {
+    fn validate_terms(&self) -> Result<TermDisequality, (bool, bool)> {
         let validation_result = validate(&self.left_term_input, &self.right_term_input);
         let (left, right) = match validation_result {
             ValidationResult::Invalid {
                 left_is_valid,
                 right_is_valid,
             } => {
-                self.ui_elements.set_invalid(left_is_valid, right_is_valid);
-                return Err(UiAction::ShowInvalid);
+                return Err((left_is_valid, right_is_valid));
             }
             ValidationResult::Valid {
                 left_term,
