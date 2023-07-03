@@ -103,15 +103,38 @@ pub(crate) async fn setup() {
         let ui_elements = UIElements::get_in(&document);
         spawn_local(async move {
             let main_loop = MainLoop {
-                worker_pool,
-                document,
-                ui_elements,
-                url_parameters,
+                worker_pool: worker_pool.clone(),
+                document: document.clone(),
+                ui_elements: UIElements::get_in(&document),
+                url_parameters: url_parameters.clone(),
                 left_term_input,
                 right_term_input,
             };
 
-            let _ = main_loop.run(abort_registration).await;
+            match main_loop.run(abort_registration).await {
+                UiAction::ShowInProgress => {
+                    todo!()
+                }
+                UiAction::ShowFinished { result, duration } => {
+                    ui_elements.proof_search_completed(
+                        &document,
+                        &url_parameters,
+                        worker_pool,
+                        duration,
+                        result,
+                    );
+                }
+                UiAction::ShowErrored => todo!(),
+                UiAction::ShowCancelled { duration } => {
+                    ui_elements
+                        .proof_search_status_view
+                        .set_cancelled(&document, duration);
+                }
+                UiAction::ShowInvalid => {
+                    todo!()
+                }
+                UiAction::DoNothing => {}
+            };
         });
     }
 }
@@ -125,27 +148,31 @@ struct MainLoop {
     right_term_input: String,
 }
 
-enum MainLoopError {
-    ValidationError,
-    Aborted,
-    Cancelled,
-}
-
-impl From<Aborted> for MainLoopError {
-    fn from(_: Aborted) -> Self {
-        Self::Aborted
-    }
+enum UiAction {
+    ShowInProgress,
+    ShowFinished {
+        result: Result<ProofInProgressSearchResult, Event>,
+        duration: f64,
+    },
+    ShowErrored,
+    ShowCancelled {
+        duration: f64,
+    },
+    ShowInvalid,
+    DoNothing,
 }
 
 impl MainLoop {
-    async fn run(self, abort_registration: AbortRegistration) -> Result<(), MainLoopError> {
+    async fn run(self, abort_registration: AbortRegistration) -> UiAction {
         self.ui_elements.update_history(
             &self.left_term_input,
             &self.right_term_input,
             &self.url_parameters,
         );
 
-        let term_disequality = self.validate_terms()?;
+        let Ok(term_disequality) = self.validate_terms() else {
+            return UiAction::ShowInvalid;
+        };
         let disequality = PolynomialDisequality::from(term_disequality).reduce();
         self.show_polynomial_disequality(&disequality);
 
@@ -169,12 +196,14 @@ impl MainLoop {
             _ = abort_signal => {
                 inner_abort_handle.abort();
                 abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-                return Err(MainLoopError::Aborted);
+                return UiAction::DoNothing;
             }
             result = abortable_search_proof_result => {
-                let result = result?;
-                self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
-                return Ok(());
+                let Ok(result) = result else {
+                    return UiAction::DoNothing;
+                };
+
+                return UiAction::ShowFinished {result, duration: duration()};
             },
             _ = timeout(15).fuse() => {
                 self.ui_elements.proof_view.root.set_text_content(None);
@@ -189,18 +218,20 @@ impl MainLoop {
             _ = abort_signal => {
                 inner_abort_handle.abort();
                 abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-                Err(MainLoopError::Aborted)
+                UiAction::DoNothing
             }
             result = abortable_search_proof_result => {
-                let result = result?;
-                self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
-                Ok(())
+                let Ok(result) = result else {
+                    return UiAction::DoNothing;
+                };
+
+                UiAction::ShowFinished {result, duration: duration()}
             },
             _ = callback_async(in_progress.cancel_button(), "click").fuse() => {
                 inner_abort_handle.abort();
                 abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-                self.ui_elements.proof_search_status_view.set_cancelled(&self.document, duration());
-                Err(MainLoopError::Cancelled)
+
+                UiAction::ShowCancelled {duration: duration()}
             },
         }
     }
@@ -211,7 +242,7 @@ impl MainLoop {
             .set_polynomial_disequality(disequality);
     }
 
-    fn validate_terms(&self) -> Result<TermDisequality, MainLoopError> {
+    fn validate_terms(&self) -> Result<TermDisequality, UiAction> {
         let validation_result = validate(&self.left_term_input, &self.right_term_input);
         let (left, right) = match validation_result {
             ValidationResult::Invalid {
@@ -219,7 +250,7 @@ impl MainLoop {
                 right_is_valid,
             } => {
                 self.ui_elements.set_invalid(left_is_valid, right_is_valid);
-                return Err(MainLoopError::ValidationError);
+                return Err(UiAction::ShowInvalid);
             }
             ValidationResult::Valid {
                 left_term,
