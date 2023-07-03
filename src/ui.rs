@@ -181,7 +181,7 @@ impl MainLoop {
                 self
                     .ui_elements
                     .proof_search_status_view
-                    .set_in_progress(&self.document)
+                    .set_in_progress(&self.document, proof_search_start_time)
             }
         };
 
@@ -327,11 +327,10 @@ struct ProofSearchStatusView {
 }
 
 impl ProofSearchStatusView {
-    fn set_in_progress(&self, document: &Document) -> InProgress {
+    fn set_in_progress(&self, document: &Document, proof_search_start_time: f64) -> InProgress {
         let root = document.clone_template_by_id_unchecked("proof-search-in-progress-status-view");
         let cancel_button = root.query_selector_unchecked("#cancel-button");
         let duration_text_element = root.query_selector_unchecked("#duration-text");
-        let start_time = now();
 
         let (abort_handle, abort_registration) = AbortHandle::new_pair();
         let parent = self.root.clone();
@@ -344,7 +343,7 @@ impl ProofSearchStatusView {
             parent.replace_children_with_node_1(&root);
 
             loop {
-                let duration = now() - start_time;
+                let duration = now() - proof_search_start_time;
                 let duration_text = format_duration(duration);
                 duration_text_element.set_text_content(Some(&format!(
                     "proof search is running for {duration_text}"
