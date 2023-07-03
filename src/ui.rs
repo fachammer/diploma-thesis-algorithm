@@ -1,17 +1,12 @@
-use std::{cell::RefCell, future::pending, mem, pin, rc::Rc};
+use std::{cell::RefCell, future::pending, mem, rc::Rc};
 
 use futures::{
-    future::{join3, select, select_ok, FusedFuture},
     never::Never,
     pin_mut, select_biased,
     stream::{unfold, AbortHandle, AbortRegistration, Abortable, Aborted, StreamExt},
-    Future, FutureExt, Stream,
+    FutureExt, Stream,
 };
-use genawaiter::{
-    rc::{gen, Gen},
-    stack::let_gen,
-    yield_,
-};
+use genawaiter::rc::Gen;
 use js_sys::encode_uri_component;
 
 use term::Term;
@@ -23,7 +18,6 @@ use crate::{
     callback::callback_async,
     disequality::{PolynomialDisequality, TermDisequality},
     log::{measure, now},
-    main,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
     term,
@@ -107,11 +101,9 @@ pub(crate) async fn setup() {
         let worker_pool = worker_pool.clone();
         let document = document.clone();
         let url_parameters = url_parameters.clone();
-        let ui_elements = UIElements::get_in(&document);
         spawn_local(async move {
             let main_loop = MainLoop {
                 worker_pool: worker_pool.clone(),
-                document: document.clone(),
                 ui_elements: UIElements::get_in(&document),
                 url_parameters: url_parameters.clone(),
                 left_term_input,
@@ -120,7 +112,7 @@ pub(crate) async fn setup() {
 
             let mut ui_actions = main_loop.run(abort_registration);
             while let Some(ui_action) = ui_actions.next().await {
-                executeUiAction(
+                execute_ui_action(
                     UIElements::get_in(&document),
                     document.clone(),
                     url_parameters.clone(),
@@ -132,14 +124,14 @@ pub(crate) async fn setup() {
     }
 }
 
-fn executeUiAction(
+fn execute_ui_action(
     ui_elements: UIElements,
     document: Document,
     url_parameters: UrlParameters,
     worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
-    uiAction: UiAction,
+    ui_action: UiAction,
 ) {
-    match uiAction {
+    match ui_action {
         UiAction::ShowInProgress {
             proof_search_start_time,
         } => {
@@ -152,7 +144,7 @@ fn executeUiAction(
             ui_elements.proof_search_completed(
                 &document,
                 &url_parameters,
-                worker_pool.clone(),
+                worker_pool,
                 duration,
                 result,
             );
@@ -168,12 +160,16 @@ fn executeUiAction(
             right_is_valid,
         } => ui_elements.set_invalid(left_is_valid, right_is_valid),
         UiAction::DoNothing => {}
+        UiAction::ShowPolynomial { disequality } => {
+            ui_elements
+                .polynomial_view
+                .set_polynomial_disequality(&disequality);
+        }
     }
 }
 
 struct MainLoop {
     worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
-    document: Document,
     ui_elements: UIElements,
     url_parameters: UrlParameters,
     left_term_input: String,
@@ -195,6 +191,9 @@ enum UiAction {
     ShowInvalid {
         left_is_valid: bool,
         right_is_valid: bool,
+    },
+    ShowPolynomial {
+        disequality: PolynomialDisequality,
     },
     DoNothing,
 }
@@ -221,7 +220,10 @@ impl MainLoop {
                 }
             };
             let disequality = PolynomialDisequality::from(term_disequality).reduce();
-            self.show_polynomial_disequality(&disequality);
+            yield_(UiAction::ShowPolynomial {
+                disequality: disequality.clone(),
+            })
+            .await;
 
             let proof_search_start_time = now();
             let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
@@ -278,12 +280,6 @@ impl MainLoop {
                 },
             }
         })
-    }
-
-    fn show_polynomial_disequality(&self, disequality: &PolynomialDisequality) {
-        self.ui_elements
-            .polynomial_view
-            .set_polynomial_disequality(disequality);
     }
 
     fn validate_terms(&self) -> Result<TermDisequality, (bool, bool)> {
