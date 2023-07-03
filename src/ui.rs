@@ -7,7 +7,11 @@ use futures::{
     stream::{unfold, AbortHandle, AbortRegistration, Abortable, Aborted, StreamExt},
     Future, FutureExt, Stream,
 };
-use genawaiter::{rc::gen, stack::let_gen, yield_};
+use genawaiter::{
+    rc::{gen, Gen},
+    stack::let_gen,
+    yield_,
+};
 use js_sys::encode_uri_component;
 
 use term::Term;
@@ -197,7 +201,8 @@ enum UiAction {
 
 impl MainLoop {
     fn run(self, abort_registration: AbortRegistration) -> impl Stream<Item = UiAction> {
-        gen!({
+        Gen::new(|co| async move {
+            let yield_ = |x| co.yield_(x);
             self.ui_elements.update_history(
                 &self.left_term_input,
                 &self.right_term_input,
@@ -207,10 +212,11 @@ impl MainLoop {
             let term_disequality = match self.validate_terms() {
                 Ok(term_disequality) => term_disequality,
                 Err((left_is_valid, right_is_valid)) => {
-                    yield_!(UiAction::ShowInvalid {
+                    yield_(UiAction::ShowInvalid {
                         left_is_valid,
                         right_is_valid,
-                    });
+                    })
+                    .await;
                     return;
                 }
             };
@@ -233,46 +239,44 @@ impl MainLoop {
 
             let duration = || now() - proof_search_start_time;
 
-            let result = select_biased! {
+            select_biased! {
                 _ = abort_signal => {
                     inner_abort_handle.abort();
                     abortable_search_proof_result.as_mut().await.expect_err("should return Err since abort handle was triggered");
-                    UiAction::DoNothing
+                    yield_(UiAction::DoNothing).await;
                 }
                 result = abortable_search_proof_result => {
                     match result {
-                        Ok(result) => UiAction::ShowFinished {result, duration: duration()},
-                        Err(_) => UiAction::DoNothing,
+                        Ok(result) => yield_(UiAction::ShowFinished {result, duration: duration()}).await,
+                        Err(_) => yield_(UiAction::DoNothing).await,
                     }
                 },
                 _ = timeout(15).fuse() => {
-                    UiAction::ShowInProgress {
+                    yield_(UiAction::ShowInProgress {
                         proof_search_start_time,
-                    }
+                    }).await
                 }
             };
-            yield_!(result);
 
-            let result = select_biased! {
+            select_biased! {
                 _ = abort_signal => {
                     inner_abort_handle.abort();
                     abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-                    UiAction::DoNothing
+                    yield_(UiAction::DoNothing).await;
                 }
                 result = abortable_search_proof_result => {
                     match result {
-                        Ok(result) => UiAction::ShowFinished {result, duration: duration()},
-                        Err(_) => UiAction::DoNothing,
+                        Ok(result) => yield_(UiAction::ShowFinished {result, duration: duration()}).await,
+                        Err(_) => yield_(UiAction::DoNothing).await,
                     }
                 },
                 _ = pending::<Never>().fuse() => {
                     inner_abort_handle.abort();
                     abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
 
-                    UiAction::ShowCancelled {duration: duration()}
+                    yield_(UiAction::ShowCancelled {duration: duration()}).await
                 },
-            };
-            yield_!(result);
+            }
         })
     }
 
