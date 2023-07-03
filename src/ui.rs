@@ -1,11 +1,13 @@
-use std::{cell::RefCell, future::pending, mem, rc::Rc};
+use std::{cell::RefCell, future::pending, mem, pin, rc::Rc};
 
 use futures::{
+    future::{join3, select, select_ok, FusedFuture},
     never::Never,
     pin_mut, select_biased,
     stream::{unfold, AbortHandle, AbortRegistration, Abortable, Aborted, StreamExt},
-    FutureExt, Stream,
+    Future, FutureExt, Stream,
 };
+use genawaiter::{rc::gen, stack::let_gen, yield_};
 use js_sys::encode_uri_component;
 
 use term::Term;
@@ -17,6 +19,7 @@ use crate::{
     callback::callback_async,
     disequality::{PolynomialDisequality, TermDisequality},
     log::{measure, now},
+    main,
     polynomial::{ExponentDisplayStyle, Polynomial, PolynomialDisplay},
     proof_search::ProofInProgressSearchResult,
     term,
@@ -111,32 +114,56 @@ pub(crate) async fn setup() {
                 right_term_input,
             };
 
-            match main_loop.run(abort_registration).await {
-                UiAction::ShowInProgress => {
-                    todo!()
-                }
-                UiAction::ShowFinished { result, duration } => {
-                    ui_elements.proof_search_completed(
-                        &document,
-                        &url_parameters,
-                        worker_pool,
-                        duration,
-                        result,
-                    );
-                }
-                UiAction::ShowErrored => todo!(),
-                UiAction::ShowCancelled { duration } => {
-                    ui_elements
-                        .proof_search_status_view
-                        .set_cancelled(&document, duration);
-                }
-                UiAction::ShowInvalid {
-                    left_is_valid,
-                    right_is_valid,
-                } => ui_elements.set_invalid(left_is_valid, right_is_valid),
-                UiAction::DoNothing => {}
-            };
+            let mut ui_actions = main_loop.run(abort_registration);
+            while let Some(ui_action) = ui_actions.next().await {
+                executeUiAction(
+                    UIElements::get_in(&document),
+                    document.clone(),
+                    url_parameters.clone(),
+                    worker_pool.clone(),
+                    ui_action,
+                );
+            }
         });
+    }
+}
+
+fn executeUiAction(
+    ui_elements: UIElements,
+    document: Document,
+    url_parameters: UrlParameters,
+    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+    uiAction: UiAction,
+) {
+    match uiAction {
+        UiAction::ShowInProgress {
+            proof_search_start_time,
+        } => {
+            ui_elements.proof_view.root.set_text_content(None);
+            ui_elements
+                .proof_search_status_view
+                .set_in_progress(&document, proof_search_start_time);
+        }
+        UiAction::ShowFinished { result, duration } => {
+            ui_elements.proof_search_completed(
+                &document,
+                &url_parameters,
+                worker_pool.clone(),
+                duration,
+                result,
+            );
+        }
+        UiAction::ShowErrored => todo!(),
+        UiAction::ShowCancelled { duration } => {
+            ui_elements
+                .proof_search_status_view
+                .set_cancelled(&document, duration);
+        }
+        UiAction::ShowInvalid {
+            left_is_valid,
+            right_is_valid,
+        } => ui_elements.set_invalid(left_is_valid, right_is_valid),
+        UiAction::DoNothing => {}
     }
 }
 
@@ -150,7 +177,9 @@ struct MainLoop {
 }
 
 enum UiAction {
-    ShowInProgress,
+    ShowInProgress {
+        proof_search_start_time: f64,
+    },
     ShowFinished {
         result: Result<ProofInProgressSearchResult, Event>,
         duration: f64,
@@ -167,83 +196,84 @@ enum UiAction {
 }
 
 impl MainLoop {
-    async fn run(self, abort_registration: AbortRegistration) -> UiAction {
-        self.ui_elements.update_history(
-            &self.left_term_input,
-            &self.right_term_input,
-            &self.url_parameters,
-        );
+    fn run(self, abort_registration: AbortRegistration) -> impl Stream<Item = UiAction> {
+        gen!({
+            self.ui_elements.update_history(
+                &self.left_term_input,
+                &self.right_term_input,
+                &self.url_parameters,
+            );
 
-        let term_disequality = match self.validate_terms() {
-            Ok(term_disequality) => term_disequality,
-            Err((left_is_valid, right_is_valid)) => {
-                return UiAction::ShowInvalid {
-                    left_is_valid,
-                    right_is_valid,
-                };
-            }
-        };
-        let disequality = PolynomialDisequality::from(term_disequality).reduce();
-        self.show_polynomial_disequality(&disequality);
+            let term_disequality = match self.validate_terms() {
+                Ok(term_disequality) => term_disequality,
+                Err((left_is_valid, right_is_valid)) => {
+                    yield_!(UiAction::ShowInvalid {
+                        left_is_valid,
+                        right_is_valid,
+                    });
+                    return;
+                }
+            };
+            let disequality = PolynomialDisequality::from(term_disequality).reduce();
+            self.show_polynomial_disequality(&disequality);
 
-        let proof_search_start_time = now();
-        let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
-        pin_mut!(abort_signal);
-        let (inner_abort_handle, inner_abort_registration) = AbortHandle::new_pair();
-        let abortable_search_proof_result = search_proof_up_to_depth_abortable(
-            self.worker_pool.clone(),
-            disequality,
-            10,
-            u32::MAX,
-            inner_abort_registration,
-        )
-        .fuse();
-        pin_mut!(abortable_search_proof_result);
+            let proof_search_start_time = now();
+            let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
+            pin_mut!(abort_signal);
+            let (inner_abort_handle, inner_abort_registration) = AbortHandle::new_pair();
+            let abortable_search_proof_result = search_proof_up_to_depth_abortable(
+                self.worker_pool.clone(),
+                disequality,
+                10,
+                u32::MAX,
+                inner_abort_registration,
+            )
+            .fuse();
+            pin_mut!(abortable_search_proof_result);
 
-        let duration = || now() - proof_search_start_time;
+            let duration = || now() - proof_search_start_time;
 
-        let in_progress = select_biased! {
-            _ = abort_signal => {
-                inner_abort_handle.abort();
-                abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-                return UiAction::DoNothing;
-            }
-            result = abortable_search_proof_result => {
-                let Ok(result) = result else {
-                    return UiAction::DoNothing;
-                };
+            let result = select_biased! {
+                _ = abort_signal => {
+                    inner_abort_handle.abort();
+                    abortable_search_proof_result.as_mut().await.expect_err("should return Err since abort handle was triggered");
+                    UiAction::DoNothing
+                }
+                result = abortable_search_proof_result => {
+                    match result {
+                        Ok(result) => UiAction::ShowFinished {result, duration: duration()},
+                        Err(_) => UiAction::DoNothing,
+                    }
+                },
+                _ = timeout(15).fuse() => {
+                    UiAction::ShowInProgress {
+                        proof_search_start_time,
+                    }
+                }
+            };
+            yield_!(result);
 
-                return UiAction::ShowFinished {result, duration: duration()};
-            },
-            _ = timeout(15).fuse() => {
-                self.ui_elements.proof_view.root.set_text_content(None);
-                self
-                    .ui_elements
-                    .proof_search_status_view
-                    .set_in_progress(&self.document, proof_search_start_time)
-            }
-        };
+            let result = select_biased! {
+                _ = abort_signal => {
+                    inner_abort_handle.abort();
+                    abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
+                    UiAction::DoNothing
+                }
+                result = abortable_search_proof_result => {
+                    match result {
+                        Ok(result) => UiAction::ShowFinished {result, duration: duration()},
+                        Err(_) => UiAction::DoNothing,
+                    }
+                },
+                _ = pending::<Never>().fuse() => {
+                    inner_abort_handle.abort();
+                    abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
 
-        select_biased! {
-            _ = abort_signal => {
-                inner_abort_handle.abort();
-                abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-                UiAction::DoNothing
-            }
-            result = abortable_search_proof_result => {
-                let Ok(result) = result else {
-                    return UiAction::DoNothing;
-                };
-
-                UiAction::ShowFinished {result, duration: duration()}
-            },
-            _ = callback_async(in_progress.cancel_button(), "click").fuse() => {
-                inner_abort_handle.abort();
-                abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-
-                UiAction::ShowCancelled {duration: duration()}
-            },
-        }
+                    UiAction::ShowCancelled {duration: duration()}
+                },
+            };
+            yield_!(result);
+        })
     }
 
     fn show_polynomial_disequality(&self, disequality: &PolynomialDisequality) {
