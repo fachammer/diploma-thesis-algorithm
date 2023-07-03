@@ -165,7 +165,7 @@ impl MainLoop {
 
         let duration = || now() - proof_search_start_time;
 
-        select_biased! {
+        let in_progress = select_biased! {
             _ = abort_signal => {
                 inner_abort_handle.abort();
                 abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
@@ -176,15 +176,14 @@ impl MainLoop {
                 self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
                 return Ok(());
             },
-            _ = timeout(15).fuse() => {}
-        }
-
-        self.ui_elements.proof_view.root.set_text_content(None);
-        let in_progress = self
-            .ui_elements
-            .proof_search_status_view
-            .set_in_progress(&self.document);
-        let cancel_button = in_progress.cancel_button();
+            _ = timeout(15).fuse() => {
+                self.ui_elements.proof_view.root.set_text_content(None);
+                self
+                    .ui_elements
+                    .proof_search_status_view
+                    .set_in_progress(&self.document)
+            }
+        };
 
         select_biased! {
             _ = abort_signal => {
@@ -197,7 +196,7 @@ impl MainLoop {
                 self.ui_elements.proof_search_completed(&self.document, & self.url_parameters,  self.worker_pool.clone(), duration(), result);
                 Ok(())
             },
-            _ = callback_async(cancel_button, "click").fuse() => {
+            _ = callback_async(in_progress.cancel_button(), "click").fuse() => {
                 inner_abort_handle.abort();
                 abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
                 self.ui_elements.proof_search_status_view.set_cancelled(&self.document, duration());
