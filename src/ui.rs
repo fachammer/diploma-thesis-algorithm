@@ -1,9 +1,9 @@
-use std::{cell::RefCell, future::pending, mem, rc::Rc};
+use std::{cell::RefCell, future::pending, rc::Rc};
 
 use futures::{
     never::Never,
     pin_mut, select_biased,
-    stream::{unfold, AbortHandle, AbortRegistration, Abortable, Aborted, StreamExt},
+    stream::{unfold, AbortHandle, AbortRegistration, Abortable, StreamExt},
     FutureExt, Stream,
 };
 use genawaiter::rc::Gen;
@@ -27,7 +27,7 @@ use crate::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
     },
-    worker::{ProofSearchWorker, ProofSearchWorkerPool},
+    worker::{ProofSearchWorkerPool, ProofSearchWorkerPoolHandle},
 };
 
 use self::proof_display::ProofDisplay;
@@ -71,8 +71,12 @@ pub(crate) async fn setup() {
     let url_parameters = UrlParameters::from_url(Url::new_unchecked(&url));
 
     let worker_pool = Rc::new(RefCell::new(
-        measure! {ProofSearchWorkerPool::new(4).await}.expect("worker pool must be ok"),
+        measure! {ProofSearchWorkerPool::
+        new(4).await}
+        .expect("worker pool must be ok"),
     ));
+    let worker_pool_handle = ProofSearchWorkerPoolHandle::from(worker_pool);
+
     let ui_elements = UIElements::get_in(&document);
 
     let hide_intro = url_parameters.hide_intro.unwrap_or(false);
@@ -86,8 +90,7 @@ pub(crate) async fn setup() {
     let right_input = url_parameters.right_term.as_deref().unwrap_or("Sx");
     ui_elements.term_view.set_inputs(left_input, right_input);
 
-    let borrowed_term_view = ui_elements.term_view;
-    let inputs = borrowed_term_view.current_and_future_inputs();
+    let inputs = ui_elements.term_view.current_and_future_inputs();
     pin_mut!(inputs);
     let main_loop_abort_handle: Rc<RefCell<Option<AbortHandle>>> = Rc::new(RefCell::new(None));
 
@@ -98,12 +101,12 @@ pub(crate) async fn setup() {
             handle.abort();
         }
 
-        let worker_pool = worker_pool.clone();
+        let worker_pool_handle = worker_pool_handle.clone();
         let document = document.clone();
         let url_parameters = url_parameters.clone();
         spawn_local(async move {
             let main_loop = MainLoop {
-                worker_pool: worker_pool.clone(),
+                worker_pool_handle: worker_pool_handle.clone(),
                 ui_elements: UIElements::get_in(&document),
                 url_parameters: url_parameters.clone(),
                 left_term_input,
@@ -116,7 +119,7 @@ pub(crate) async fn setup() {
                     UIElements::get_in(&document),
                     document.clone(),
                     url_parameters.clone(),
-                    worker_pool.clone(),
+                    worker_pool_handle.clone(),
                     ui_action,
                 );
             }
@@ -128,7 +131,7 @@ fn execute_ui_action(
     ui_elements: UIElements,
     document: Document,
     url_parameters: UrlParameters,
-    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+    worker_pool: ProofSearchWorkerPoolHandle,
     ui_action: UiAction,
 ) {
     match ui_action {
@@ -169,7 +172,7 @@ fn execute_ui_action(
 }
 
 struct MainLoop {
-    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+    worker_pool_handle: ProofSearchWorkerPoolHandle,
     ui_elements: UIElements,
     url_parameters: UrlParameters,
     left_term_input: String,
@@ -199,7 +202,7 @@ enum UiAction {
 }
 
 impl MainLoop {
-    fn run(self, abort_registration: AbortRegistration) -> impl Stream<Item = UiAction> {
+    fn run(mut self, abort_registration: AbortRegistration) -> impl Stream<Item = UiAction> {
         Gen::new(|co| async move {
             let yield_ = |x| co.yield_(x);
             self.ui_elements.update_history(
@@ -228,30 +231,23 @@ impl MainLoop {
             let proof_search_start_time = now();
             let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
             pin_mut!(abort_signal);
-            let (inner_abort_handle, inner_abort_registration) = AbortHandle::new_pair();
-            let abortable_search_proof_result = search_proof_up_to_depth_abortable(
-                self.worker_pool.clone(),
-                disequality,
-                10,
-                u32::MAX,
-                inner_abort_registration,
-            )
+            let search_proof_result = {
+                async move {
+                    let mut worker = self.worker_pool_handle.take_worker().await?;
+                    worker.search_proof(disequality, 10, u32::MAX).await
+                }
+            }
             .fuse();
-            pin_mut!(abortable_search_proof_result);
+            pin_mut!(search_proof_result);
 
             let duration = || now() - proof_search_start_time;
 
             select_biased! {
                 _ = abort_signal => {
-                    inner_abort_handle.abort();
-                    abortable_search_proof_result.as_mut().await.expect_err("should return Err since abort handle was triggered");
                     yield_(UiAction::DoNothing).await;
                 }
-                result = abortable_search_proof_result => {
-                    match result {
-                        Ok(result) => yield_(UiAction::ShowFinished {result, duration: duration()}).await,
-                        Err(_) => yield_(UiAction::DoNothing).await,
-                    }
+                result = search_proof_result => {
+                    yield_(UiAction::ShowFinished {result, duration: duration()}).await
                 },
                 _ = timeout(15).fuse() => {
                     yield_(UiAction::ShowInProgress {
@@ -260,23 +256,16 @@ impl MainLoop {
                 }
             };
 
+            // TODO: add cancel button
             select_biased! {
                 _ = abort_signal => {
-                    inner_abort_handle.abort();
-                    abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
                     yield_(UiAction::DoNothing).await;
                 }
-                result = abortable_search_proof_result => {
-                    match result {
-                        Ok(result) => yield_(UiAction::ShowFinished {result, duration: duration()}).await,
-                        Err(_) => yield_(UiAction::DoNothing).await,
-                    }
-                },
                 _ = pending::<Never>().fuse() => {
-                    inner_abort_handle.abort();
-                    abortable_search_proof_result.await.expect_err("should return Err since abort handle was triggered");
-
                     yield_(UiAction::ShowCancelled {duration: duration()}).await
+                },
+                result = search_proof_result => {
+                    yield_(UiAction::ShowFinished {result, duration: duration()}).await
                 },
             }
         })
@@ -636,7 +625,7 @@ impl UIElements {
         document: &Document,
         proof_result: ProofInProgressSearchResult,
         max_initial_proof_depth: u32,
-        worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+        worker_pool_handle: ProofSearchWorkerPoolHandle,
         duration: f64,
     ) {
         let proof_view = &self.proof_view.root;
@@ -649,7 +638,7 @@ impl UIElements {
                     max_depth: max_initial_proof_depth,
                     conclusion,
                     previous_split_variable: u32::MAX,
-                    worker_pool,
+                    worker_pool_handle,
                 }
                 .render(document);
                 proof_view.append_child_unchecked(&proof_display);
@@ -667,7 +656,7 @@ impl UIElements {
                     max_depth: max_initial_proof_depth,
                     conclusion,
                     previous_split_variable: u32::MAX,
-                    worker_pool,
+                    worker_pool_handle,
                 }
                 .render(document);
                 proof_view.append_child_unchecked(&proof_display);
@@ -691,7 +680,7 @@ impl UIElements {
         &self,
         document: &Document,
         url_parameters: &UrlParameters,
-        worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+        worker_pool_handle: ProofSearchWorkerPoolHandle,
         duration: f64,
         result: Result<ProofInProgressSearchResult, Event>,
     ) {
@@ -701,7 +690,7 @@ impl UIElements {
                     document,
                     result,
                     url_parameters.max_initial_proof_depth.unwrap_or(4),
-                    worker_pool,
+                    worker_pool_handle,
                     duration,
                 );
             }
@@ -773,56 +762,9 @@ impl RenderNode for Polynomial {
     }
 }
 
-async fn search_proof_up_to_depth_abortable(
-    worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
-    disequality: PolynomialDisequality,
-    depth: u32,
-    previous_split_variable: u32,
-    abort_registration: AbortRegistration,
-) -> Result<Result<ProofInProgressSearchResult, Event>, Aborted> {
-    let worker = worker_pool.as_ref().borrow_mut().pop_worker();
-    let worker = match worker {
-        Some(worker) => worker,
-        None => match ProofSearchWorker::new().await {
-            Ok(worker) => worker,
-            Err(error) => return Ok(Err(error)),
-        },
-    };
-
-    let abortable_task = Abortable::new(
-        worker.search_proof(disequality, depth, previous_split_variable),
-        abort_registration,
-    );
-
-    let result = abortable_task.await;
-    match result {
-        Ok(Ok(_)) => {
-            // if worker succeeds, reuse it by giving it back to the pool
-            worker_pool.as_ref().borrow_mut().push_worker(worker);
-        }
-        Err(Aborted) | Ok(Err(_)) => {
-            spawn_local(async move {
-                // if worker errored or was aborted, we cannot reuse it since it most likely encountered
-                // an out of memory error or is long-running
-                // therefore we drop the worker and put a new worker in its place
-                mem::drop(worker);
-                if let Ok(new_worker) = ProofSearchWorker::new().await {
-                    worker_pool.as_ref().borrow_mut().push_worker(new_worker);
-                }
-                // if we cannot create a worker right now,
-                // we try again when searching for a proof the next time
-                // however, creating a worker most likely won't fail
-            });
-        }
-    }
-
-    result
-}
-
 pub(crate) mod proof_display {
-    use std::{cell::RefCell, fmt::Display, rc::Rc};
+    use std::fmt::Display;
 
-    use futures::stream::AbortHandle;
     use wasm_bindgen::{prelude::Closure, JsCast};
     use wasm_bindgen_futures::spawn_local;
     use web_sys::{Document, Element, Event, HtmlElement, Node};
@@ -835,10 +777,10 @@ pub(crate) mod proof_display {
             document_unchecked, DocumentUnchecked, ElementUnchecked, EventTargetUnchecked,
             NodeUnchecked,
         },
-        worker::ProofSearchWorkerPool,
+        worker::ProofSearchWorkerPoolHandle,
     };
 
-    use super::{search_proof_up_to_depth_abortable, RenderNode};
+    use super::RenderNode;
 
     pub(crate) struct ProofDisplay<'a> {
         pub(crate) proof: &'a ProofInProgress,
@@ -846,7 +788,7 @@ pub(crate) mod proof_display {
         pub(crate) max_depth: u32,
         pub(crate) conclusion: PolynomialDisequality,
         pub(crate) previous_split_variable: u32,
-        pub(crate) worker_pool: Rc<RefCell<ProofSearchWorkerPool>>,
+        pub(crate) worker_pool_handle: ProofSearchWorkerPoolHandle,
     }
 
     impl<'a> RenderNode for ProofDisplay<'a> {
@@ -868,22 +810,22 @@ pub(crate) mod proof_display {
                         render_proof_leaf(document, &self.conclusion, ProofLeaf::InProgress)
                             .unchecked_into();
                     let node_clone = node.clone();
-                    let worker_pool_clone = self.worker_pool.clone();
+                    let worker_pool_handle = self.worker_pool_handle.clone();
                     let conclusion_clone = self.conclusion.clone();
                     let previous_split_variable = self.previous_split_variable;
                     spawn_local(async move {
                         let document = document_unchecked();
-                        let (_, abort_registration) = AbortHandle::new_pair();
-                        let result = search_proof_up_to_depth_abortable(
-                            worker_pool_clone.clone(),
-                            conclusion_clone,
-                            5,
-                            previous_split_variable,
-                            abort_registration,
-                        )
+                        let result = {
+                            let mut worker_pool_handle = worker_pool_handle.clone();
+                            async move {
+                                let mut worker = worker_pool_handle.take_worker().await?;
+                                worker
+                                    .search_proof(conclusion_clone, 5, previous_split_variable)
+                                    .await
+                            }
+                        }
                         .await
-                        .expect("result must be ok")
-                        .expect("is not aborted");
+                        .expect("result must be ok");
 
                         match result {
                             crate::proof_search::ProofInProgressSearchResult::ProofFound {
@@ -901,7 +843,7 @@ pub(crate) mod proof_display {
                                     max_depth: 0,
                                     conclusion,
                                     previous_split_variable,
-                                    worker_pool: worker_pool_clone,
+                                    worker_pool_handle,
                                 };
                                 let proof_node = proof_display.render(&document);
                                 node_clone
@@ -979,7 +921,7 @@ pub(crate) mod proof_display {
                             max_depth: self.max_depth,
                             conclusion: self.conclusion.at_variable_zero(*variable),
                             previous_split_variable: *variable,
-                            worker_pool: self.worker_pool.clone(),
+                            worker_pool_handle: self.worker_pool_handle.clone(),
                         }
                         .render(document);
                         let successor_subproof_node = ProofDisplay {
@@ -991,7 +933,7 @@ pub(crate) mod proof_display {
                                 .clone()
                                 .into_at_variable_plus_one(*variable),
                             previous_split_variable: *variable,
-                            worker_pool: self.worker_pool.clone(),
+                            worker_pool_handle: self.worker_pool_handle.clone(),
                         }
                         .render(document);
                         let subproofs_node = document.create_div_unchecked();
@@ -1021,7 +963,7 @@ pub(crate) mod proof_display {
                     } else {
                         let zero_proof = zero_proof.clone();
                         let successor_proof = successor_proof.clone();
-                        let worker_pool = self.worker_pool.clone();
+                        let worker_pool_handle = self.worker_pool_handle.clone();
                         let conclusion = self.conclusion.clone();
                         let variable = *variable;
                         let expand_button_callback = Closure::wrap(Box::new(move |_| {
@@ -1034,7 +976,7 @@ pub(crate) mod proof_display {
                                     max_depth: 0,
                                     conclusion: conclusion.at_variable_zero(variable),
                                     previous_split_variable: variable,
-                                    worker_pool: worker_pool.clone(),
+                                    worker_pool_handle: worker_pool_handle.clone(),
                                 }
                                 .render(&document);
                                 let successor_subproof_node = ProofDisplay {
@@ -1045,7 +987,7 @@ pub(crate) mod proof_display {
                                         .clone()
                                         .into_at_variable_plus_one(variable),
                                     previous_split_variable: variable,
-                                    worker_pool: worker_pool.clone(),
+                                    worker_pool_handle: worker_pool_handle.clone(),
                                 }
                                 .render(&document);
                                 let subproofs_node = document.create_div_unchecked();

@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     future::Future,
+    ops::{Deref, DerefMut},
     rc::Rc,
     task::{Poll, Waker},
 };
@@ -8,6 +9,7 @@ use std::{
 use futures::future::join_all;
 use js_sys::Uint8Array;
 use wasm_bindgen::{prelude::Closure, JsCast, JsValue};
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{console, Event, MessageEvent, Worker, WorkerOptions};
 
 use crate::{
@@ -20,6 +22,7 @@ use crate::{
 
 pub(crate) struct ProofSearchWorkerPool {
     pool: Vec<ProofSearchWorker>,
+    desired_size: usize,
 }
 
 impl ProofSearchWorkerPool {
@@ -27,25 +30,126 @@ impl ProofSearchWorkerPool {
         assert!(size > 0);
         let worker_futures = (0..size).map(|_| ProofSearchWorker::new());
         let worker_results = join_all(worker_futures).await;
+
         let mut pool = Vec::with_capacity(size);
-        for worker_result in worker_results {
-            pool.push(worker_result?);
+        for worker in worker_results {
+            pool.push(worker?);
         }
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            desired_size: size,
+        })
+    }
+}
+#[derive(Clone)]
+pub(crate) struct ProofSearchWorkerPoolHandle {
+    pool_handle: Rc<RefCell<ProofSearchWorkerPool>>,
+}
+
+pub(crate) struct ProofSearchWorkerHandle {
+    pool_handle: ProofSearchWorkerPoolHandle,
+    worker: Option<ProofSearchWorker>,
+}
+
+impl ProofSearchWorkerHandle {
+    fn new(pool_handle: ProofSearchWorkerPoolHandle, worker: ProofSearchWorker) -> Self {
+        Self {
+            pool_handle,
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Deref for ProofSearchWorkerHandle {
+    type Target = ProofSearchWorker;
+
+    fn deref(&self) -> &Self::Target {
+        self.worker.as_ref().expect("worker is not None since there are no constructors which make the worker None and the worker is never changed")
+    }
+}
+
+impl DerefMut for ProofSearchWorkerHandle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.worker.as_mut().expect("worker is not None since there are no constructors which make the worker None and the worker is never changed")
+    }
+}
+
+impl Drop for ProofSearchWorkerHandle {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            self.pool_handle.give_worker(worker);
+        }
+    }
+}
+
+impl ProofSearchWorkerPoolHandle {
+    pub(crate) async fn take_worker(&mut self) -> Result<ProofSearchWorkerHandle, Event> {
+        console::log_2(
+            &"acquiring worker, before in pool:".into(),
+            &self.pool_handle.borrow().pool.len().into(),
+        );
+        let worker = self.pool_handle.borrow_mut().pool.pop();
+
+        let worker = match worker {
+            Some(worker) => worker,
+            None => {
+                console::log_1(&"creating new worker".into());
+                ProofSearchWorker::new().await?
+            }
+        };
+
+        console::log_2(
+            &"acquiring worker, after in pool:".into(),
+            &self.pool_handle.borrow().pool.len().into(),
+        );
+
+        Ok(ProofSearchWorkerHandle::new(self.clone(), worker))
     }
 
-    pub(crate) fn pop_worker(&mut self) -> Option<ProofSearchWorker> {
-        self.pool.pop()
-    }
+    pub(crate) fn give_worker(&mut self, worker: ProofSearchWorker) {
+        if self.pool_handle.borrow().pool.len() == self.pool_handle.borrow().desired_size {
+            return;
+        }
 
-    pub(crate) fn push_worker(&mut self, worker: ProofSearchWorker) {
-        self.pool.push(worker)
+        match worker.status() {
+            ProofSearchWorkerStatus::Ready => {
+                // if worker is ready again, we can reuse it
+                self.pool_handle.borrow_mut().pool.push(worker);
+                console::log_2(
+                    &"pushed worker, now in pool:".into(),
+                    &self.pool_handle.borrow().pool.len().into(),
+                );
+            }
+            ProofSearchWorkerStatus::Running | ProofSearchWorkerStatus::Errored => {
+                // if worker is not ready, we create a new one in its place
+                std::mem::drop(worker);
+                let mut pool_handle = self.clone();
+                spawn_local(async move {
+                    if let Ok(worker) = ProofSearchWorker::new().await {
+                        pool_handle.give_worker(worker);
+                    }
+                });
+            }
+        }
     }
+}
+
+impl From<Rc<RefCell<ProofSearchWorkerPool>>> for ProofSearchWorkerPoolHandle {
+    fn from(pool_handle: Rc<RefCell<ProofSearchWorkerPool>>) -> Self {
+        Self { pool_handle }
+    }
+}
+
+pub(crate) enum ProofSearchWorkerStatus {
+    Ready,
+    Running,
+    Errored,
 }
 
 pub(crate) struct ProofSearchWorker {
     pub(crate) worker: AsyncWorker,
+    status: ProofSearchWorkerStatus,
 }
 
 impl ProofSearchWorker {
@@ -57,15 +161,23 @@ impl ProofSearchWorker {
         let worker = AsyncWorker { worker };
         let message = worker.post_message_response(&"initial".into()).await?;
         assert_eq!(message.data(), "ready");
-        Ok(Self { worker })
+        Ok(Self {
+            worker,
+            status: ProofSearchWorkerStatus::Ready,
+        })
+    }
+
+    pub(crate) fn status(&self) -> &ProofSearchWorkerStatus {
+        &self.status
     }
 
     pub(crate) async fn search_proof(
-        &self,
+        &mut self,
         disequality: PolynomialDisequality,
         depth: u32,
         previous_variable: u32,
     ) -> Result<ProofInProgressSearchResult, Event> {
+        self.status = ProofSearchWorkerStatus::Running;
         let search_proof_request = bincode::serialize(&SearchProofRequest {
             disequality,
             depth,
@@ -74,11 +186,17 @@ impl ProofSearchWorker {
         .expect("serialize should work");
         let search_proof_request = Uint8Array::from(&search_proof_request[..]);
 
-        let message = measure! {
+        let message = match measure! {
             self
                 .worker
                 .post_message_response(&search_proof_request)
-                .await?
+                .await
+        } {
+            Ok(message) => message,
+            Err(error) => {
+                self.status = ProofSearchWorkerStatus::Errored;
+                return Err(error);
+            }
         };
 
         let proof_result_buffer: Uint8Array = message
@@ -88,6 +206,8 @@ impl ProofSearchWorker {
         let proof_result_buffer: &[u8] = &proof_result_buffer.to_vec();
         let result =
             measure! {bincode::deserialize(proof_result_buffer).expect("deserialize should work")};
+        self.status = ProofSearchWorkerStatus::Ready;
+
         Ok(result)
     }
 }
