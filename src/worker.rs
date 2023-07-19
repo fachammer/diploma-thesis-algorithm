@@ -65,15 +65,15 @@ impl Deref for ProofSearchWorkerHandle {
     type Target = ProofSearchWorker;
 
     fn deref(&self) -> &Self::Target {
-        self.worker.as_ref().expect("worker is not None since there are no constructors which make the worker None and the worker is never changed")
+        self.worker.as_ref().expect("worker is not None since there are no constructors which make the worker None and the worker is never .changed, except in drop")
     }
 }
 
 impl DerefMut for ProofSearchWorkerHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.worker.as_mut().expect("worker is not None since there are no constructors which make the worker None and the worker is never changed")
+        self.worker.as_mut().expect("worker is not None since there are no constructors which make the worker None and the worker is never changed, except in drop")
     }
-}
+}.
 
 impl Drop for ProofSearchWorkerHandle {
     fn drop(&mut self) {
