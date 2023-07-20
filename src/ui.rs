@@ -1,10 +1,10 @@
-use std::{cell::RefCell, future::pending, rc::Rc};
+use std::{cell::RefCell, future::pending, pin::Pin, rc::Rc};
 
 use futures::{
     never::Never,
     pin_mut, select_biased,
-    stream::{unfold, AbortHandle, AbortRegistration, Abortable, StreamExt},
-    FutureExt, Stream,
+    stream::{unfold, AbortHandle, AbortRegistration, Abortable, Aborted, StreamExt},
+    Future, FutureExt, Stream,
 };
 use genawaiter::rc::Gen;
 use js_sys::encode_uri_component;
@@ -12,7 +12,7 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{Document, Event, HtmlElement, Node, Url};
+use web_sys::{Document, Element, Event, HtmlElement, Node, Url};
 
 use crate::{
     callback::callback_async,
@@ -22,7 +22,6 @@ use crate::{
     proof_search::ProofInProgressSearchResult,
     term,
     timeout::timeout,
-    ui::proof_search_status::InProgress,
     web_unchecked::{
         document_unchecked, window_unchecked, DocumentUnchecked, ElementUnchecked, NodeUnchecked,
         UrlUnchecked,
@@ -114,7 +113,25 @@ pub(crate) async fn setup() {
             };
 
             let mut ui_actions = main_loop.run(abort_registration);
-            while let Some(ui_action) = ui_actions.next().await {
+            let in_progress = loop {
+                if let Some(ui_action) = ui_actions.next().await {
+                    if let Some(in_progress) = execute_ui_action(
+                        UIElements::get_in(&document),
+                        document.clone(),
+                        url_parameters.clone(),
+                        worker_pool_handle.clone(),
+                        ui_action,
+                    ) {
+                        break Some(in_progress);
+                    }
+                } else {
+                    break None;
+                }
+            };
+
+            if let Some(in_progress) = in_progress {
+                let ui_action = in_progress.run().await;
+
                 execute_ui_action(
                     UIElements::get_in(&document),
                     document.clone(),
@@ -133,15 +150,20 @@ fn execute_ui_action(
     url_parameters: UrlParameters,
     worker_pool: ProofSearchWorkerPoolHandle,
     ui_action: UiAction,
-) {
+) -> Option<InProgress> {
     match ui_action {
         UiAction::ShowInProgress {
             proof_search_start_time,
+            search_proof_result,
+            abort_signal,
         } => {
             ui_elements.proof_view.root.set_text_content(None);
-            ui_elements
-                .proof_search_status_view
-                .set_in_progress(&document, proof_search_start_time);
+            Some(ui_elements.proof_search_status_view.set_in_progress(
+                &document,
+                proof_search_start_time,
+                search_proof_result,
+                abort_signal,
+            ))
         }
         UiAction::ShowFinished { result, duration } => {
             ui_elements.proof_search_completed(
@@ -151,22 +173,28 @@ fn execute_ui_action(
                 duration,
                 result,
             );
+            None
         }
         UiAction::ShowErrored => todo!(),
         UiAction::ShowCancelled { duration } => {
             ui_elements
                 .proof_search_status_view
                 .set_cancelled(&document, duration);
+            None
         }
         UiAction::ShowInvalid {
             left_is_valid,
             right_is_valid,
-        } => ui_elements.set_invalid(left_is_valid, right_is_valid),
-        UiAction::DoNothing => {}
+        } => {
+            ui_elements.set_invalid(left_is_valid, right_is_valid);
+            None
+        }
+        UiAction::DoNothing => None,
         UiAction::ShowPolynomial { disequality } => {
             ui_elements
                 .polynomial_view
                 .set_polynomial_disequality(&disequality);
+            None
         }
     }
 }
@@ -179,9 +207,12 @@ struct MainLoop {
     right_term_input: String,
 }
 
-enum UiAction {
+pub(crate) enum UiAction {
     ShowInProgress {
         proof_search_start_time: f64,
+        search_proof_result:
+            Pin<Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>>,
+        abort_signal: Pin<Box<dyn Future<Output = Result<Never, Aborted>>>>,
     },
     ShowFinished {
         result: Result<ProofInProgressSearchResult, Event>,
@@ -230,7 +261,7 @@ impl MainLoop {
 
             let proof_search_start_time = now();
             let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
-            pin_mut!(abort_signal);
+            let mut abort_signal = Box::pin(abort_signal);
             let search_proof_result = {
                 async move {
                     let mut worker = self.worker_pool_handle.take_worker().await?;
@@ -238,7 +269,7 @@ impl MainLoop {
                 }
             }
             .fuse();
-            pin_mut!(search_proof_result);
+            let mut search_proof_result = Box::pin(search_proof_result);
 
             let duration = || now() - proof_search_start_time;
 
@@ -247,26 +278,15 @@ impl MainLoop {
                     yield_(UiAction::DoNothing).await;
                 }
                 result = search_proof_result => {
-                    yield_(UiAction::ShowFinished {result, duration: duration()}).await
+                    yield_(UiAction::ShowFinished {result, duration: duration()}).await;
                 },
                 _ = timeout(15).fuse() => {
                     yield_(UiAction::ShowInProgress {
                         proof_search_start_time,
-                    }).await
+                        search_proof_result,
+                        abort_signal
+                    }).await;
                 }
-            };
-
-            // TODO: add cancel button
-            select_biased! {
-                _ = abort_signal => {
-                    yield_(UiAction::DoNothing).await;
-                }
-                _ = pending::<Never>().fuse() => {
-                    yield_(UiAction::ShowCancelled {duration: duration()}).await
-                },
-                result = search_proof_result => {
-                    yield_(UiAction::ShowFinished {result, duration: duration()}).await
-                },
             }
         })
     }
@@ -386,36 +406,22 @@ struct ProofSearchStatusView {
 }
 
 impl ProofSearchStatusView {
-    fn set_in_progress(&self, document: &Document, proof_search_start_time: f64) -> InProgress {
-        let root = document.clone_template_by_id_unchecked("proof-search-in-progress-status-view");
-        let cancel_button = root.query_selector_unchecked("#cancel-button");
-        let duration_text_element = root.query_selector_unchecked("#duration-text");
-
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        let parent = self.root.clone();
-        spawn_local(async move {
-            let abort_message =
-                Abortable::new(std::future::pending::<Never>(), abort_registration).fuse();
-            pin_mut!(abort_message);
-
-            parent.set_attribute_unchecked("data-proof-search-status", "in-progress");
-            parent.replace_children_with_node_1(&root);
-
-            loop {
-                let duration = now() - proof_search_start_time;
-                let duration_text = format_duration(duration);
-                duration_text_element.set_text_content(Some(&format!(
-                    "proof search is running for {duration_text}"
-                )));
-
-                select_biased! {
-                    _ = abort_message => break,
-                    _ = timeout(8).fuse() => {},
-                };
-            }
-        });
-
-        InProgress::new(abort_handle, cancel_button)
+    fn set_in_progress(
+        &self,
+        document: &Document,
+        proof_search_start_time: f64,
+        search_proof_result: Pin<
+            Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>,
+        >,
+        abort_signal: Pin<Box<dyn Future<Output = Result<std::convert::Infallible, Aborted>>>>,
+    ) -> InProgress {
+        InProgress {
+            search_proof_result,
+            abort_signal,
+            proof_search_start_time,
+            document: document.clone(),
+            root: self.root.clone().into(),
+        }
     }
 
     fn set_errored(&self, document: &Document, proof_search_duration: f64) {
@@ -474,31 +480,49 @@ impl ProofSearchStatusView {
     }
 }
 
-mod proof_search_status {
-    use futures::stream::AbortHandle;
-    use web_sys::{Element, EventTarget};
+pub(crate) struct InProgress {
+    pub(crate) abort_signal: Pin<Box<dyn Future<Output = Result<Never, Aborted>>>>,
+    pub(crate) search_proof_result:
+        Pin<Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>>,
+    pub(crate) proof_search_start_time: f64,
+    pub(crate) document: Document,
+    pub(crate) root: Element,
+}
 
-    pub(crate) struct InProgress {
-        abort_handle: AbortHandle,
-        cancel_button: Element,
-    }
+impl InProgress {
+    pub(crate) async fn run(mut self) -> UiAction {
+        let root = self
+            .document
+            .clone_template_by_id_unchecked("proof-search-in-progress-status-view");
+        let cancel_button = root.query_selector_unchecked("#cancel-button");
+        let duration_text_element = root.query_selector_unchecked("#duration-text");
 
-    impl InProgress {
-        pub(crate) fn new(abort_handle: AbortHandle, cancel_button: Element) -> Self {
-            Self {
-                abort_handle,
-                cancel_button,
-            }
-        }
+        let parent = self.root.clone();
 
-        pub(crate) fn cancel_button(&self) -> &EventTarget {
-            &self.cancel_button
-        }
-    }
+        parent.set_attribute_unchecked("data-proof-search-status", "in-progress");
+        parent.replace_children_with_node_1(&root);
 
-    impl Drop for InProgress {
-        fn drop(&mut self) {
-            self.abort_handle.abort();
+        let abort_signal = self.abort_signal.as_mut().fuse();
+        pin_mut!(abort_signal);
+        let search_proof_result = self.search_proof_result.as_mut().fuse();
+        pin_mut!(search_proof_result);
+
+        loop {
+            let duration = now() - self.proof_search_start_time;
+            let duration_text = format_duration(duration);
+            duration_text_element.set_text_content(Some(&format!(
+                "proof search is running for {duration_text}"
+            )));
+
+            select_biased! {
+                _ = abort_signal => return UiAction::DoNothing,
+                _ = callback_async(&cancel_button, "click").fuse() => {
+                    return UiAction::ShowCancelled {duration};}
+                result = search_proof_result => {
+                    return UiAction::ShowFinished {result, duration};
+                },
+                _ = timeout(8).fuse() => {},
+            };
         }
     }
 }

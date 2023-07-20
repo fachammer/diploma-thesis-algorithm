@@ -73,7 +73,7 @@ impl DerefMut for ProofSearchWorkerHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.worker.as_mut().expect("worker is not None since there are no constructors which make the worker None and the worker is never changed, except in drop")
     }
-}.
+}
 
 impl Drop for ProofSearchWorkerHandle {
     fn drop(&mut self) {
