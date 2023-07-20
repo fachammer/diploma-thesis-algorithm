@@ -143,6 +143,7 @@ pub(crate) async fn setup() {
         });
     }
 }
+
 pub(crate) enum UiAction {
     ShowInProgress {
         proof_search_start_time: f64,
@@ -535,7 +536,7 @@ impl InProgress {
                         Err(_) => return UiAction::ShowErrored { duration }
                     }
                 },
-                _ = timeout(8).fuse() => {},
+                _ = timeout(15).fuse() => {},
             };
         }
     }
