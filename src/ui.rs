@@ -96,8 +96,8 @@ pub(crate) async fn setup() {
     while let Some((left_term_input, right_term_input)) = inputs.next().await {
         let (abort_handle, abort_registration) = AbortHandle::new_pair();
         let previous_abort_handle = main_loop_abort_handle.borrow_mut().replace(abort_handle);
-        if let Some(handle) = previous_abort_handle {
-            handle.abort();
+        if let Some(previous_handle) = previous_abort_handle {
+            previous_handle.abort();
         }
 
         let worker_pool_handle = worker_pool_handle.clone();
