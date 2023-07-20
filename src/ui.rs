@@ -175,7 +175,12 @@ fn execute_ui_action(
             );
             None
         }
-        UiAction::ShowErrored => todo!(),
+        UiAction::ShowErrored { duration } => {
+            ui_elements
+                .proof_search_status_view
+                .set_errored(&document, duration);
+            None
+        }
         UiAction::ShowCancelled { duration } => {
             ui_elements
                 .proof_search_status_view
@@ -215,10 +220,12 @@ pub(crate) enum UiAction {
         abort_signal: Pin<Box<dyn Future<Output = Result<Never, Aborted>>>>,
     },
     ShowFinished {
-        result: Result<ProofInProgressSearchResult, Event>,
+        result: ProofInProgressSearchResult,
         duration: f64,
     },
-    ShowErrored,
+    ShowErrored {
+        duration: f64,
+    },
     ShowCancelled {
         duration: f64,
     },
@@ -278,7 +285,11 @@ impl MainLoop {
                     yield_(UiAction::DoNothing).await;
                 }
                 result = search_proof_result => {
-                    yield_(UiAction::ShowFinished {result, duration: duration()}).await;
+                    match result {
+                        Ok(result) => yield_(UiAction::ShowFinished {result, duration: duration()}).await,
+                        Err(_) => yield_(UiAction::ShowErrored { duration: duration() }).await
+                    }
+
                 },
                 _ = timeout(15).fuse() => {
                     yield_(UiAction::ShowInProgress {
@@ -519,7 +530,11 @@ impl InProgress {
                 _ = callback_async(&cancel_button, "click").fuse() => {
                     return UiAction::ShowCancelled {duration};}
                 result = search_proof_result => {
-                    return UiAction::ShowFinished {result, duration};
+                    match result
+                    {
+                        Ok(result) => return UiAction::ShowFinished {result, duration},
+                        Err(_) => return UiAction::ShowErrored { duration }
+                    }
                 },
                 _ = timeout(8).fuse() => {},
             };
@@ -706,23 +721,15 @@ impl UIElements {
         url_parameters: &UrlParameters,
         worker_pool_handle: ProofSearchWorkerPoolHandle,
         duration: f64,
-        result: Result<ProofInProgressSearchResult, Event>,
+        result: ProofInProgressSearchResult,
     ) {
-        match result {
-            Ok(result) => {
-                self.update_proof_view(
-                    document,
-                    result,
-                    url_parameters.max_initial_proof_depth.unwrap_or(4),
-                    worker_pool_handle,
-                    duration,
-                );
-            }
-            Err(_) => {
-                self.proof_search_status_view
-                    .set_errored(document, duration);
-            }
-        }
+        self.update_proof_view(
+            document,
+            result,
+            url_parameters.max_initial_proof_depth.unwrap_or(4),
+            worker_pool_handle,
+            duration,
+        );
     }
 
     fn update_history(
