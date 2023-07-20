@@ -143,6 +143,32 @@ pub(crate) async fn setup() {
         });
     }
 }
+pub(crate) enum UiAction {
+    ShowInProgress {
+        proof_search_start_time: f64,
+        search_proof_result:
+            Pin<Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>>,
+        abort_signal: Pin<Box<dyn Future<Output = Result<Never, Aborted>>>>,
+    },
+    ShowFinished {
+        result: ProofInProgressSearchResult,
+        duration: f64,
+    },
+    ShowErrored {
+        duration: f64,
+    },
+    ShowCancelled {
+        duration: f64,
+    },
+    ShowInvalid {
+        left_is_valid: bool,
+        right_is_valid: bool,
+    },
+    ShowPolynomial {
+        disequality: PolynomialDisequality,
+    },
+    DoNothing,
+}
 
 fn execute_ui_action(
     ui_elements: UIElements,
@@ -210,33 +236,6 @@ struct MainLoop {
     url_parameters: UrlParameters,
     left_term_input: String,
     right_term_input: String,
-}
-
-pub(crate) enum UiAction {
-    ShowInProgress {
-        proof_search_start_time: f64,
-        search_proof_result:
-            Pin<Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>>,
-        abort_signal: Pin<Box<dyn Future<Output = Result<Never, Aborted>>>>,
-    },
-    ShowFinished {
-        result: ProofInProgressSearchResult,
-        duration: f64,
-    },
-    ShowErrored {
-        duration: f64,
-    },
-    ShowCancelled {
-        duration: f64,
-    },
-    ShowInvalid {
-        left_is_valid: bool,
-        right_is_valid: bool,
-    },
-    ShowPolynomial {
-        disequality: PolynomialDisequality,
-    },
-    DoNothing,
 }
 
 impl MainLoop {
