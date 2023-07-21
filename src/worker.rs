@@ -171,7 +171,7 @@ impl ProofSearchWorker {
         &self.status
     }
 
-    pub(crate) async fn search_proof(
+    pub(crate) async fn search_proof_up_to_depth(
         &mut self,
         disequality: PolynomialDisequality,
         depth: u32,

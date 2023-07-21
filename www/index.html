@@ -42,8 +42,6 @@
 
       body {
         margin: 0 auto;
-        transition: opacity 0.15s, margin-top 0.15s;
-        transition-timing-function: ease-in-out;
       }
 
       #left-term-input,
@@ -275,18 +273,32 @@
         width: 1px;
       }
 
-      body {
+      body:not([data-webassembly-ready]) {
         opacity: 0;
-        margin-top: 2px;
+        margin-top: 10px;
       }
 
       body[data-webassembly-ready] {
         opacity: 1;
         margin-top: 0px;
+        transition: opacity 0.15s, margin-top 0.15s;
+        transition-timing-function: ease-in-out;
       }
 
       #proof-search-status-cancel-button {
         display: none;
+      }
+
+      #proof-search-status:not([data-proof-search-status-after-delay]) {
+        opacity: 0;
+        margin-top: 10px;
+      }
+
+      #proof-search-status[data-proof-search-status-after-delay] {
+        opacity: 1;
+        margin-top: 0;
+        transition: opacity 0.15s, margin-top 0.15s;
+        transition-timing-function: ease-in-out;
       }
 
       #proof-search-status[data-proof-search-status="in-progress"]

@@ -12,7 +12,7 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{Document, Element, Event, HtmlElement, Node, Url};
+use web_sys::{console, Document, Element, Event, HtmlElement, Node, Url};
 
 use crate::{
     callback::callback_async,
@@ -145,6 +145,7 @@ pub(crate) async fn setup() {
 }
 
 pub(crate) enum UiAction {
+    SetBeforeInProgressDelay,
     ShowInProgress {
         proof_search_start_time: f64,
         search_proof_result:
@@ -177,8 +178,15 @@ fn execute_ui_action(
     url_parameters: UrlParameters,
     worker_pool: ProofSearchWorkerPoolHandle,
     ui_action: UiAction,
-) -> Option<InProgress> {
+) -> Option<InProgressAfterDelay> {
     match ui_action {
+        UiAction::SetBeforeInProgressDelay => {
+            console::log_1(&"set before in progress delay".into());
+            ui_elements
+                .proof_search_status_view
+                .set_before_in_progress_delay();
+            None
+        }
         UiAction::ShowInProgress {
             proof_search_start_time,
             search_proof_result,
@@ -265,19 +273,22 @@ impl MainLoop {
                 disequality: disequality.clone(),
             })
             .await;
+            yield_(UiAction::SetBeforeInProgressDelay).await;
 
-            let proof_search_start_time = now();
             let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
             let mut abort_signal = Box::pin(abort_signal);
             let search_proof_result = {
                 async move {
                     let mut worker = self.worker_pool_handle.take_worker().await?;
-                    worker.search_proof(disequality, 10, u32::MAX).await
+                    worker
+                        .search_proof_up_to_depth(disequality, 10, u32::MAX)
+                        .await
                 }
             }
             .fuse();
             let mut search_proof_result = Box::pin(search_proof_result);
 
+            let proof_search_start_time = now();
             let duration = || now() - proof_search_start_time;
 
             select_biased! {
@@ -289,7 +300,6 @@ impl MainLoop {
                         Ok(result) => yield_(UiAction::ShowFinished {result, duration: duration()}).await,
                         Err(_) => yield_(UiAction::ShowErrored { duration: duration() }).await
                     }
-
                 },
                 _ = timeout(15).fuse() => {
                     yield_(UiAction::ShowInProgress {
@@ -425,8 +435,11 @@ impl ProofSearchStatusView {
             Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>,
         >,
         abort_signal: Pin<Box<dyn Future<Output = Result<std::convert::Infallible, Aborted>>>>,
-    ) -> InProgress {
-        InProgress {
+    ) -> InProgressAfterDelay {
+        self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", true)
+            .expect("toggle attribute should work");
+        InProgressAfterDelay {
             search_proof_result,
             abort_signal,
             proof_search_start_time,
@@ -437,6 +450,9 @@ impl ProofSearchStatusView {
 
     fn set_errored(&self, document: &Document, proof_search_duration: f64) {
         self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", true)
+            .expect("toggle attribute should work");
+        self.root
             .set_attribute_unchecked("data-proof-search-status", "errored");
         let formatted_duration = format_duration(proof_search_duration);
         let root = document.clone_template_by_id_unchecked("proof-search-errored-status-view");
@@ -446,6 +462,9 @@ impl ProofSearchStatusView {
     }
 
     fn set_cancelled(&self, document: &Document, proof_search_duration: f64) {
+        self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", true)
+            .expect("toggle attribute should work");
         let formatted_duration = format_duration(proof_search_duration);
         let root = document.clone_template_by_id_unchecked("proof-search-cancelled-status-view");
         let duration_text = root.query_selector_unchecked("#duration-text");
@@ -456,6 +475,9 @@ impl ProofSearchStatusView {
     }
 
     fn set_found_root(&self, duration: f64, document: &Document) {
+        self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", true)
+            .expect("toggle attribute should work");
         let formatted_duration = format_duration(duration);
         self.root
             .set_attribute_unchecked("data-proof-search-status", "found-root");
@@ -468,6 +490,9 @@ impl ProofSearchStatusView {
 
     fn set_not_strictly_monomially_comparable(&self, duration: &f64, document: &Document) {
         let formatted_duration = format_duration(*duration);
+        self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", true)
+            .expect("toggle attribute should work");
         self.root.set_attribute_unchecked(
             "data-proof-search-status",
             "not-strictly-monomially-comparable",
@@ -481,6 +506,9 @@ impl ProofSearchStatusView {
     }
 
     fn set_found_proof(&self, document: &Document, duration: f64) {
+        self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", true)
+            .expect("toggle attribute should work");
         let formatted_duration = format_duration(duration);
         self.root
             .set_attribute_unchecked("data-proof-search-status", "found-proof");
@@ -489,9 +517,15 @@ impl ProofSearchStatusView {
         duration_text.set_text_content(Some(&formatted_duration));
         self.root.replace_children_with_node_1(&root);
     }
+
+    fn set_before_in_progress_delay(&self) {
+        self.root
+            .toggle_attribute_with_force("data-proof-search-status-after-delay", false)
+            .expect("toggle attribute should work");
+    }
 }
 
-pub(crate) struct InProgress {
+pub(crate) struct InProgressAfterDelay {
     pub(crate) abort_signal: Pin<Box<dyn Future<Output = Result<Never, Aborted>>>>,
     pub(crate) search_proof_result:
         Pin<Box<dyn Future<Output = Result<ProofInProgressSearchResult, Event>>>>,
@@ -500,7 +534,7 @@ pub(crate) struct InProgress {
     pub(crate) root: Element,
 }
 
-impl InProgress {
+impl InProgressAfterDelay {
     pub(crate) async fn run(mut self) -> UiAction {
         let root = self
             .document
@@ -851,7 +885,11 @@ pub(crate) mod proof_display {
                             async move {
                                 let mut worker = worker_pool_handle.take_worker().await?;
                                 worker
-                                    .search_proof(conclusion_clone, 5, previous_split_variable)
+                                    .search_proof_up_to_depth(
+                                        conclusion_clone,
+                                        5,
+                                        previous_split_variable,
+                                    )
                                     .await
                             }
                         }
