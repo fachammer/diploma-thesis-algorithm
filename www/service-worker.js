@@ -4,11 +4,6 @@ const putInCache = async (request, response) => {
 };
 
 const cacheFirst = async ({ request, fallbackUrl }) => {
-  const responseFromCache = await caches.match(request, { ignoreSearch: true });
-  if (responseFromCache) {
-    return responseFromCache;
-  }
-
   try {
     const responseFromNetwork = await fetch(request);
     putInCache(request, responseFromNetwork.clone());
