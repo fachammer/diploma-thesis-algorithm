@@ -12,7 +12,7 @@ use js_sys::encode_uri_component;
 use term::Term;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{console, Document, Element, Event, HtmlElement, Node, Url};
+use web_sys::{Document, Element, Event, HtmlElement, Node, Url};
 
 use crate::{
     callback::callback_async,
@@ -145,7 +145,6 @@ pub(crate) async fn setup() {
 }
 
 pub(crate) enum UiAction {
-    SetBeforeInProgressDelay,
     ShowInProgress {
         proof_search_start_time: f64,
         search_proof_result:
@@ -166,7 +165,7 @@ pub(crate) enum UiAction {
         left_is_valid: bool,
         right_is_valid: bool,
     },
-    ShowPolynomial {
+    UpdatePolynomial {
         disequality: PolynomialDisequality,
     },
     DoNothing,
@@ -180,13 +179,6 @@ fn execute_ui_action(
     ui_action: UiAction,
 ) -> Option<InProgressAfterDelay> {
     match ui_action {
-        UiAction::SetBeforeInProgressDelay => {
-            console::log_1(&"set before in progress delay".into());
-            ui_elements
-                .proof_search_status_view
-                .set_before_in_progress_delay();
-            None
-        }
         UiAction::ShowInProgress {
             proof_search_start_time,
             search_proof_result,
@@ -230,10 +222,13 @@ fn execute_ui_action(
             None
         }
         UiAction::DoNothing => None,
-        UiAction::ShowPolynomial { disequality } => {
+        UiAction::UpdatePolynomial { disequality } => {
             ui_elements
                 .polynomial_view
                 .set_polynomial_disequality(&disequality);
+            ui_elements
+                .proof_search_status_view
+                .set_before_in_progress_delay();
             None
         }
     }
@@ -269,11 +264,10 @@ impl MainLoop {
                 }
             };
             let disequality = PolynomialDisequality::from(term_disequality).reduce();
-            yield_(UiAction::ShowPolynomial {
+            yield_(UiAction::UpdatePolynomial {
                 disequality: disequality.clone(),
             })
             .await;
-            yield_(UiAction::SetBeforeInProgressDelay).await;
 
             let abort_signal = Abortable::new(pending::<Never>(), abort_registration).fuse();
             let mut abort_signal = Box::pin(abort_signal);
