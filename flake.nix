@@ -107,7 +107,7 @@
               enable = true;
               appendHttpConfig = ''
                 error_log stderr;
-                access_log /dev/stdout;
+                access_log syslog:server=unix:/dev/log combined;
               '';
               virtualHosts = {
                 "${cfg.address}" = {
