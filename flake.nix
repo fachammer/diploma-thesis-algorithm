@@ -72,7 +72,7 @@
               '';
             };
 
-          vm-aarch64-linux = (self.nixosConfigurations.default {
+          vm-aarch64-linux = (self.nixosConfigurations.vm {
             guestSystem = "aarch64-linux";
             hostSystem = system;
           }).config.system.build.vm;
@@ -107,7 +107,7 @@
               enable = true;
               appendHttpConfig = ''
                 error_log stderr;
-                access_log syslog:server=unix:/dev/log combined;
+                access_log /dev/stdout;
               '';
               virtualHosts = {
                 "${cfg.address}" = {
@@ -121,10 +121,17 @@
                 };
               };
             };
+
+            networking.firewall = {
+              enable = true;
+              allowedTCPPorts = [
+                config.services.diploma-thesis-algorithm.port
+              ];
+            };
           };
         };
 
-      nixosConfigurations.default = { hostSystem, guestSystem }: nixpkgs.lib.nixosSystem {
+      nixosConfigurations.vm = { hostSystem, guestSystem }: nixpkgs.lib.nixosSystem {
         system = guestSystem;
 
         modules = [
@@ -135,6 +142,7 @@
             ];
             system.stateVersion = "23.05";
             nixpkgs.localSystem.system = guestSystem;
+
             virtualisation.diskImage = "./diploma-thesis-algorithm.qcow2";
             virtualisation.graphics = false;
             virtualisation.host.pkgs = nixpkgs.legacyPackages.${hostSystem};
@@ -146,14 +154,14 @@
               }
             ];
 
+            services.getty.autologinUser = "root";
+
             networking.firewall = {
               enable = true;
               allowedTCPPorts = [
                 config.services.diploma-thesis-algorithm.port
               ];
             };
-
-            services.getty.autologinUser = "root";
 
             services.diploma-thesis-algorithm = {
               enable = true;
