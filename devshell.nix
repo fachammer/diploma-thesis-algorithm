@@ -2,7 +2,7 @@
   perSystem = { pkgs, system, self', ... }: {
     devShells = {
       default = pkgs.mkShell {
-        buildInputs = with pkgs; [
+        nativeBuildInputs = with pkgs; [
           nil
           nixpkgs-fmt
         ];

@@ -13,9 +13,7 @@
 
     packages.files =
       let
-        rustBinary = pkgs.rust-bin.stable."1.69.0".default.override {
-          targets = [ "wasm32-unknown-unknown" ];
-        };
+        rustBinary = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rustBinary;
           rustc = rustBinary;
